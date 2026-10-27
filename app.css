@@ -207,3 +207,6 @@ a{color:inherit}
   .press:active{transform:none}
   .sheet,.slip-bar,.seg .ind{transition:none}
 }
+
+.seg button.soon{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--muted-g);cursor:not-allowed;line-height:1.1}
+.seg button.soon small{font-size:12px;font-weight:500}

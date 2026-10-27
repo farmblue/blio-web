@@ -31,7 +31,7 @@
     openGroup: 'Fish',
     pick: null,                 // {id, pack, cut, qty}
     cart: store('cart') || [],
-    form: Object.assign({ name: '', fulfil: 'delivery', address: '', area: '', notes: '' }, store('form') || {}),
+    form: Object.assign({ name: '', address: '', area: '', notes: '' }, store('form') || {}, { fulfil: 'delivery' }),
     errors: {},
     last: null,
     installDismissed: !!store('installDismissed')
@@ -155,7 +155,7 @@
         step('You order by 6 PM', 'Pick the fish, the pack size and the cut, then send the order on WhatsApp.', 32, '#2456A6', '<svg width="170" height="170" viewBox="0 0 170 170" aria-hidden="true"><circle cx="85" cy="85" r="72" fill="#ECE6D6"/><circle cx="85" cy="85" r="6" fill="#12272C"/><rect x="82" y="34" width="6" height="54" fill="#12272C"/><rect x="82" y="82" width="40" height="6" fill="#C2462A"/></svg>') +
         step('We buy from the boats', 'Only what was ordered, straight from fishermen in North Goa and on the Konkan coast.', 64, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
         step('Cleaned to your cut', 'Whole, curry cut, steaks or fillet, done by hand in Kolhapur.', 40, '#ECE6D6', '<svg width="220" height="120" viewBox="0 0 220 120" aria-hidden="true"><path d="M14 60C56 14 140 14 176 60C140 106 56 106 14 60Z" fill="#2456A6"/><path d="M172 60l38-30v60z" fill="#2456A6"/><circle cx="46" cy="54" r="6" fill="#ECE6D6"/><rect x="84" y="20" width="6" height="80" fill="#ECE6D6"/><rect x="112" y="22" width="6" height="76" fill="#ECE6D6"/><rect x="140" y="30" width="6" height="60" fill="#ECE6D6"/></svg>') +
-        step('At your door by 9 PM', 'Next evening, packed on ice. Or pick it up yourself.', 52, '#195360', '<svg width="180" height="180" viewBox="0 0 180 180" aria-hidden="true"><path d="M20 84L90 26l70 58v80H20z" fill="#ECE6D6"/><rect x="72" y="108" width="36" height="56" fill="#C2462A"/><rect x="38" y="98" width="24" height="24" fill="#2456A6"/><rect x="118" y="98" width="24" height="24" fill="#2456A6"/></svg>') +
+        step('At your door by 9 PM', 'Next evening, packed on ice and brought to your door.', 52, '#195360', '<svg width="180" height="180" viewBox="0 0 180 180" aria-hidden="true"><path d="M20 84L90 26l70 58v80H20z" fill="#ECE6D6"/><rect x="72" y="108" width="36" height="56" fill="#C2462A"/><rect x="38" y="98" width="24" height="24" fill="#2456A6"/><rect x="118" y="98" width="24" height="24" fill="#2456A6"/></svg>') +
       '</div></section>' +
       '<a class="cta press" href="#catch" data-act="tocatch"><span class="l">' + esc(w.cta) + '</span>' +
         '<svg width="36" height="36" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M9 27L27 9M12 9h15v15"/></svg>' +
@@ -219,7 +219,7 @@
       '<div class="fld"><span class="lab" style="font-size:16px">How you get it</span>' +
         '<div class="seg dark" data-on="' + (del ? 0 : 1) + '"><span class="ind"></span>' +
         '<button data-act="fulfil" data-v="delivery" aria-pressed="' + del + '">Home delivery</button>' +
-        '<button data-act="fulfil" data-v="pickup" aria-pressed="' + !del + '">Self pickup</button></div></div>' +
+        '<button disabled aria-disabled="true" class="soon">Self pickup<small>Starting soon</small></button></div></div>' +
       (del ?
         '<div class="fld"><label for="f-addr">Delivery address</label><textarea id="f-addr" data-f="address" autocomplete="street-address" placeholder="House, street, landmark">' + esc(f.address) + '</textarea>' +
           (e.address ? '<span class="err">Please add the address.</span>' : '') + '</div>' +
