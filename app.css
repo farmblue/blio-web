@@ -212,3 +212,42 @@ a{color:inherit}
 .seg button.soon small{font-size:12px;font-weight:500}
 .item .low{font-size:13px;font-weight:600;color:#F2B49F;margin-top:2px}
 .box.warn{background:#5A2318;color:#FFE3DA;font-size:15px}
+
+/* map pin */
+.mapov{position:absolute;inset:0;z-index:30;display:flex;flex-direction:column;background:var(--ground);opacity:0;transform:translateY(16px);transition:opacity 220ms ease,transform 260ms var(--ease)}
+.mapov.show{opacity:1;transform:none}
+.mapbar{height:calc(var(--top-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) 16px 0;display:flex;align-items:center;gap:8px;color:var(--paper);font-size:17px}
+.mapwrap{position:relative;flex:1;min-height:0}
+#lmap{position:absolute;inset:0;background:#DCD4BF}
+.pin{position:absolute;left:50%;top:50%;transform:translate(-50%,-100%);z-index:500;pointer-events:none;filter:drop-shadow(0 4px 6px rgba(0,0,0,.35))}
+.mapfoot{padding:14px 16px calc(16px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:12px;background:var(--ground)}
+.mapfoot p{margin:0;font-size:15px;line-height:1.4;color:var(--body-g);min-height:2.8em}
+.mapbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mapbtns .btn{height:52px;padding:0 10px;font-size:15px}
+.pinned{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--raised);padding:0 16px;height:52px;font-size:16px;font-weight:600}
+.pinned span{display:flex;align-items:center;gap:8px}
+.linkbtn{border:0;background:transparent;color:var(--paper);font-size:15px;font-weight:600;text-decoration:underline;text-underline-offset:3px;padding:8px 0}
+.hint{font-size:13px;color:var(--muted-g)}
+
+/* delivery */
+.dhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.dhead h1{margin:0;font-size:52px;line-height:.9}
+.dcount{font-size:15px;color:var(--muted-g)}
+.dcard{background:var(--paper);color:var(--ink);padding:18px;display:flex;flex-direction:column;gap:8px}
+.dtop{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.dtop b{font-size:19px}
+.amt{font-size:16px;font-weight:700;color:var(--action);white-space:nowrap}
+.amt.paid{color:#2E6B3A}
+.dsub{font-size:13px;color:var(--muted)}
+.dcard p{margin:0;font-size:15px;line-height:1.45}
+.dnote{color:var(--warn)}
+.ditems{color:var(--muted)}
+.dbtns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:6px}
+.dbtns .btn{height:46px;font-size:14px;padding:0 6px}
+.dcard .btn.confirm{background:var(--ink);color:var(--paper)}
+.dfoot{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.dfoot .btn{flex:1}
+.linkbtn.light{color:var(--muted-g)}
+
+/* pay */
+.upi{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--paper-2);padding:10px 10px 10px 16px;font-size:17px;font-weight:600;word-break:break-all}

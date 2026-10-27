@@ -37,6 +37,8 @@
     live: false,
     errors: {},
     last: null,
+    upi: '', payee: '',
+    dpin: store('dpin') || '', deliv: null, dErr: '', dLoading: false, dConfirm: '',
     installDismissed: !!store('installDismissed')
   };
 
@@ -73,13 +75,14 @@
     if (!d || !d.products || !d.products.length) { return false; }
     S.products = d.products; S.live = true;
     if (typeof d.deliveryFee === 'number') { CONFIG.deliveryFee = d.deliveryFee; }
+    if (d.upi !== undefined) { S.upi = d.upi || ''; S.payee = d.payee || ''; }
     return true;
   }
   function loadApi() {
     if (!CONFIG.api) { return; }
     var cached = store('api'); if (applyApi(cached)) { render(false); }
     fetch(CONFIG.api, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
-      if (applyApi(d)) { store('api', d); keepScroll(); }
+      if (applyApi(d)) { store('api', d); if (S.screen === 'home' || S.screen === 'pay') { keepScroll(); } }
     }).catch(function () { /* keep cached or built-in list */ });
   }
   function keepScroll() { var st = main.scrollTop; render(false); main.scrollTop = st; }
@@ -99,7 +102,7 @@
     return { sub: sub, fee: fee, total: sub + fee, count: count };
   }
   function saveCart() { store('cart', S.cart); }
-  function saveForm() { store('form', { name: S.form.name, phone: S.form.phone, address: S.form.address, area: S.form.area }); }
+  function saveForm() { store('form', { name: S.form.name, phone: S.form.phone, address: S.form.address, area: S.form.area, lat: S.form.lat || null, lng: S.form.lng || null }); }
 
   // ---------- drawings ----------
   var ART = {
@@ -217,7 +220,11 @@
       (del ?
         '<div class="fld"><label for="f-addr">Delivery address</label><textarea id="f-addr" data-f="address" autocomplete="street-address" placeholder="House, street, landmark">' + esc(f.address) + '</textarea>' +
           (e.address ? '<span class="err">Please add the address.</span>' : '') + '</div>' +
-        '<div class="fld"><label for="f-area">Area in Kolhapur</label><input id="f-area" data-f="area" placeholder="For example Rajarampuri, Tarabai Park" value="' + esc(f.area) + '"></div>'
+        '<div class="fld"><label for="f-area">Area in Kolhapur</label><input id="f-area" data-f="area" placeholder="For example Rajarampuri, Tarabai Park" value="' + esc(f.area) + '"></div>' +
+        '<div class="fld"><span class="lab" style="font-size:16px">Location on the map</span>' +
+          (f.lat ? '<div class="pinned"><span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg> Pinned on the map</span><button class="linkbtn" data-act="map">Change</button></div>'
+                 : '<button class="btn dark press" data-act="map">Pin your location on the map</button>') +
+          '<span class="hint">Optional, but it helps our delivery person find your door.</span></div>'
         : '<div class="box">Collect from the Blio cleaning point in Kolhapur, ' + esc(w.delivery) + ', 5 to 9 PM. We share the exact location on WhatsApp.</div>') +
       '<div class="fld"><label for="f-notes">Notes (optional)</label><input id="f-notes" data-f="notes" placeholder="Cleaning preferences, timing" value="' + esc(f.notes) + '"></div>' +
       (S.short ? '<div class="box warn" role="alert">' + esc(S.short) + '</div>' : '') +
@@ -307,6 +314,7 @@
     msg.push('', 'Subtotal: ' + rs(o.subtotal), 'Delivery: ' + rs(o.fee), 'Estimated total: ' + rs(o.total), '');
     msg.push('Name: ' + f.name.trim(), 'Mobile: ' + f.phone);
     msg.push('Address: ' + f.address.trim().replace(/\s*\n\s*/g, ', ') + (f.area.trim() ? ', ' + f.area.trim() : ''));
+    if (f.lat) { msg.push('Location: https://maps.google.com/?q=' + f.lat + ',' + f.lng); }
     if (f.notes.trim()) { msg.push('Notes: ' + f.notes.trim()); }
     msg.push('Payment: UPI after confirmation');
     return msg.join('\n');
@@ -335,7 +343,7 @@
     }
     S.sending = true; keepScroll();
     fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, items: lines }) })
+      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.ok) { finish({ id: d.id, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total }); return; }
@@ -349,10 +357,143 @@
       .catch(function () { S.sending = false; S.errors = { server: true }; keepScroll(); });
   }
 
+  // ---------- map pin ----------
+  var mapov = $('#mapov'), lmap = null;
+  function mapMsg(t) { var m = $('#mapmsg'); if (m) { m.textContent = t; } }
+  function loadLeaflet(cb) {
+    if (window.L) { cb(); return; }
+    var css = document.createElement('link'); css.rel = 'stylesheet';
+    css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
+    var js = document.createElement('script'); js.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    js.onload = cb; js.onerror = function () { mapMsg('The map couldn’t load. Check your internet connection and try again.'); };
+    document.head.appendChild(js);
+  }
+  function locate() {
+    if (!navigator.geolocation || !lmap) { mapMsg('Move the map so the pin sits on your gate or building.'); return; }
+    mapMsg('Finding where you are…');
+    navigator.geolocation.getCurrentPosition(function (p) {
+      lmap.setView([p.coords.latitude, p.coords.longitude], 18);
+      mapMsg('Move the map so the pin sits exactly on your gate or building.');
+    }, function () {
+      mapMsg('Couldn’t get your location. Move the map so the pin sits on your gate or building.');
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  }
+  function openMap() {
+    mapov.hidden = false; requestAnimationFrame(function () { mapov.classList.add('show'); });
+    mapMsg('Loading the map…');
+    loadLeaflet(function () {
+      if (!lmap) {
+        lmap = L.map('lmap', { zoomControl: true }).setView([16.705, 74.2433], 13);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(lmap);
+      }
+      setTimeout(function () {
+        lmap.invalidateSize();
+        if (S.form.lat) { lmap.setView([S.form.lat, S.form.lng], 18); mapMsg('Move the map so the pin sits exactly on your gate or building.'); }
+        else { locate(); }
+      }, 60);
+    });
+  }
+  function closeMap() { mapov.classList.remove('show'); setTimeout(function () { mapov.hidden = true; }, 260); }
+  function confirmMap() {
+    if (!lmap) { return; }
+    var c = lmap.getCenter();
+    S.form.lat = +c.lat.toFixed(6); S.form.lng = +c.lng.toFixed(6); saveForm();
+    closeMap(); keepScroll();
+  }
+
+  // ---------- delivery page ----------
+  function loadDeliveries() {
+    if (!CONFIG.api || !S.dpin) { return; }
+    S.dLoading = true; S.dErr = ''; keepScroll();
+    fetch(CONFIG.api + '?action=deliveries&pin=' + encodeURIComponent(S.dpin), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        S.dLoading = false;
+        if (d.ok) { S.deliv = d.orders; }
+        else if (d.error === 'locked') { S.dErr = 'Too many wrong PINs. Wait 10 minutes and try again.'; S.dpin = ''; store('dpin', ''); }
+        else { S.dErr = 'That PIN didn’t work. Check the Delivery PIN in the admin sheet.'; S.dpin = ''; store('dpin', ''); S.deliv = null; }
+        keepScroll();
+      })
+      .catch(function () { S.dLoading = false; S.dErr = 'Couldn’t load deliveries. Check your internet connection.'; keepScroll(); });
+  }
+  function markDelivered(id) {
+    if (S.dConfirm !== id) { S.dConfirm = id; keepScroll(); return; }
+    S.dConfirm = '';
+    var o = (S.deliv || []).filter(function (x) { return x.id === id; })[0]; if (o) { o.saving = true; } keepScroll();
+    fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'delivered', pin: S.dpin, id: id }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) { S.deliv = S.deliv.filter(function (x) { return x.id !== id; }); }
+        else { if (o) { o.saving = false; } S.dErr = 'Couldn’t mark ' + id + ' as delivered. Try again.'; }
+        keepScroll();
+      })
+      .catch(function () { if (o) { o.saving = false; } S.dErr = 'No connection. ' + id + ' is not marked yet.'; keepScroll(); });
+  }
+  function deliveryHtml(anim) {
+    var head = '<div class="dhead"><h1 class="anton">Deliveries</h1>';
+    if (!S.dpin) {
+      return '<div class="stack' + (anim ? ' enter' : '') + '">' + head + '</div>' +
+        '<div class="fld"><label for="d-pin">Delivery PIN</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN from the admin sheet"></div>' +
+        (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
+        '<button class="btn big press" data-act="dlogin">Open deliveries</button>' +
+        '<span class="muted-g">For the Blio delivery team only.</span></div>';
+    }
+    var list = S.deliv || [];
+    var cards = list.map(function (o) {
+      var amount = o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total;
+      var nav = o.map || ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(o.address + ', ' + o.area + ', Kolhapur'));
+      return '<div class="dcard"><div class="dtop"><b>' + esc(o.name) + '</b><span class="amt num' + (o.status === 'Paid' ? ' paid' : '') + '">' +
+          (o.status === 'Paid' ? 'Paid' : 'Collect ' + rs(amount)) + '</span></div>' +
+        '<span class="dsub">' + esc(o.id) + (o.area ? ' · ' + esc(o.area) : '') + (o.map ? ' · pinned' : '') + '</span>' +
+        '<p>' + esc(o.address) + '</p>' +
+        (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
+        '<p class="ditems">' + esc(o.items) + '</p>' +
+        '<div class="dbtns"><a class="btn dark" href="tel:+91' + esc(o.mobile) + '">Call</a>' +
+        '<a class="btn dark" href="' + esc(nav) + '" target="_blank" rel="noopener">Navigate</a>' +
+        '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a></div>' +
+        '<button class="btn press' + (S.dConfirm === o.id ? ' confirm' : '') + '" data-act="ddone" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>' +
+          (o.saving ? 'Saving…' : S.dConfirm === o.id ? 'Tap again to confirm' : 'Mark delivered') + '</button></div>';
+    }).join('');
+    return '<div class="stack' + (anim ? ' enter' : '') + '">' + head +
+        '<span class="dcount">' + (S.deliv ? list.length + (list.length === 1 ? ' order to deliver' : ' orders to deliver') : '') + '</span></div>' +
+      (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
+      (S.dLoading && !S.deliv ? '<div class="box">Loading orders…</div>' : '') +
+      (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are marked Confirmed or Paid in the sheet.</div>' : '') +
+      cards +
+      '<div class="dfoot"><button class="btn dark press" data-act="dreload">' + (S.dLoading ? 'Refreshing…' : 'Refresh') + '</button>' +
+      '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div></div>';
+  }
+
+  // ---------- payment page ----------
+  function payParams() {
+    var q = (location.hash.split('?')[1] || ''), o = {};
+    q.split('&').forEach(function (kv) { var p = kv.split('='); if (p[0]) { o[p[0]] = decodeURIComponent(p[1] || ''); } });
+    return { id: (o.o || '').replace(/[^A-Za-z0-9-]/g, ''), amount: Math.max(0, Math.round(parseFloat(o.a) || 0)) };
+  }
+  function payHtml(anim) {
+    var p = payParams();
+    var upiLink = S.upi ? 'upi://pay?pa=' + S.upi.replace(/[^A-Za-z0-9.@_-]/g, '') + '&pn=' + encodeURIComponent(S.payee || 'Farmblue Agrotech') +
+      (p.amount ? '&am=' + p.amount : '') + '&cu=INR&tn=' + encodeURIComponent('Blio ' + p.id) : '';
+    return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="ticket"><div class="in">' +
+      '<span class="note">Blio order ' + esc(p.id) + '</span>' +
+      '<h1 class="anton" style="font-size:72px;line-height:.9">' + (p.amount ? rs(p.amount) : 'Pay') + '</h1>' +
+      (S.upi
+        ? '<a class="btn big press" href="' + esc(upiLink) + '">Pay with a UPI app</a>' +
+          '<p style="font-size:15px">If the button doesn’t open your UPI app, pay to this UPI ID:</p>' +
+          '<div class="upi"><span class="num" id="upi-id">' + esc(S.upi) + '</span><button class="chip press" data-act="copyupi">Copy</button></div>' +
+          (S.payee ? '<span class="note">Paying ' + esc(S.payee) + '</span>' : '')
+        : '<p>Payment details aren’t loaded yet. Check your connection, or ask us on WhatsApp.</p>') +
+      '</div><div class="perf"></div><div style="padding:18px 22px 24px;display:flex;flex-direction:column;gap:12px">' +
+      '<span class="note">After paying, send us the payment screenshot on WhatsApp so we can mark your order paid.</span>' +
+      '<a class="btn dark press" href="https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent('Paid for Blio order ' + p.id) + '" target="_blank" rel="noopener">Send screenshot on WhatsApp</a></div></div></div>';
+  }
+
   // ---------- render ----------
   function render(anim) {
     if (S.screen === 'home') { main.innerHTML = homeHtml(anim); bindRail(); }
     else if (S.screen === 'slip') { main.innerHTML = slipHtml(anim); }
+    else if (S.screen === 'delivery') { main.innerHTML = deliveryHtml(anim); }
+    else if (S.screen === 'pay') { main.innerHTML = payHtml(anim); }
     else { main.innerHTML = doneHtml(anim); }
     back.hidden = S.screen === 'home';
     var t = totals();
@@ -366,10 +507,24 @@
     try { history.pushState({ s: screen }, '', screen === 'home' ? '/' : '#' + screen); } catch (e) {}
     render(true); main.scrollTop = 0;
   }
+  function route() {
+    var h = location.hash;
+    if (h === '#slip') { return 'slip'; }
+    if (h === '#delivery') { return 'delivery'; }
+    if (h.indexOf('#pay') === 0) { return 'pay'; }
+    return 'home';
+  }
+  function enterRoute() {
+    S.screen = route();
+    if (S.screen === 'delivery' && S.dpin && !S.deliv) { loadDeliveries(); }
+    render(true);
+  }
   window.addEventListener('popstate', function () {
     if (sheetEl.classList.contains('show')) { closeSheet(); }
-    S.screen = location.hash === '#slip' ? 'slip' : 'home'; render(true);
+    if (!mapov.hidden) { closeMap(); }
+    enterRoute();
   });
+  window.addEventListener('hashchange', function () { if (route() !== S.screen) { enterRoute(); } });
   function bindRail() {
     var r = $('#rail'), b = $('#railbar'); if (!r) { return; }
     r.addEventListener('scroll', function () { var m = r.scrollWidth - r.clientWidth; b.style.transform = 'translateX(' + ((m > 0 ? r.scrollLeft / m : 0) * 300).toFixed(1) + '%)'; }, { passive: true });
@@ -399,6 +554,17 @@
       case 'lrm': S.cart.splice(i, 1); saveCart(); render(false); break;
       case 'fulfil': S.form.fulfil = v; saveForm(); render(false); break;
       case 'send': send(); break;
+      case 'map': openMap(); break;
+      case 'mapclose': closeMap(); break;
+      case 'locate': locate(); break;
+      case 'mapok': confirmMap(); break;
+      case 'dlogin': var pin = ($('#d-pin') || {}).value || ''; if (pin.trim()) { S.dpin = pin.trim(); store('dpin', S.dpin); S.deliv = null; loadDeliveries(); } break;
+      case 'dlogout': S.dpin = ''; store('dpin', ''); S.deliv = null; S.dErr = ''; keepScroll(); break;
+      case 'dreload': S.dConfirm = ''; loadDeliveries(); break;
+      case 'ddone': markDelivered(a.getAttribute('data-id')); break;
+      case 'copyupi':
+        try { navigator.clipboard.writeText(S.upi).then(function () { a.textContent = 'Copied'; }, function () {}); } catch (err) {}
+        break;
       case 'home': go('home'); break;
       case 'install': if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.finally(function () { deferredPrompt = null; render(false); }); } break;
       case 'noinstall': S.installDismissed = true; store('installDismissed', true); render(false); break;
@@ -411,7 +577,11 @@
   bar.addEventListener('click', function () { go('slip'); });
   back.addEventListener('click', function () { go('home'); });
   scrim.addEventListener('click', closeSheet);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && sheetEl.classList.contains('show')) { closeSheet(); } });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && sheetEl.classList.contains('show')) { closeSheet(); }
+    if (e.key === 'Escape' && !mapov.hidden) { closeMap(); }
+    if (e.key === 'Enter' && e.target.id === 'd-pin') { var b = $('[data-act=dlogin]'); if (b) { b.click(); } }
+  });
 
   // countdown
   setInterval(function () {
@@ -420,8 +590,7 @@
     if (w.open && el) { el.textContent = w.left; } else if (!!w.open !== !!el) { var st = main.scrollTop; render(false); main.scrollTop = st; }
   }, 30000);
 
-  if (location.hash === '#slip') { S.screen = 'slip'; }
-  render(true);
+  enterRoute();
   loadApi();
   if ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('/sw.js').catch(function () {}); }
 })();

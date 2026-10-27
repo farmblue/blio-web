@@ -1,5 +1,5 @@
 /* Blio service worker: keeps the app shell available offline, always tries the network first. */
-var CACHE = 'blio-v2';
+var CACHE = 'blio-v3';
 var SHELL = ['/', '/index.html', '/app.css', '/app.js', '/products.js', '/manifest.webmanifest',
   '/icons/wordmark.svg', '/icons/wordmark-dark.svg', '/icons/icon-192.png', '/favicon.ico'];
 

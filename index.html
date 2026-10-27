@@ -35,6 +35,25 @@
   <button class="slip-bar press" id="slipbar" aria-label="Open your slip"></button>
   <div class="scrim" id="scrim"></div>
   <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Item"></div>
+  <div class="mapov" id="mapov" role="dialog" aria-modal="true" aria-label="Pin your location" hidden>
+    <div class="mapbar">
+      <button class="icon-btn press" data-act="mapclose" aria-label="Close the map">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <b>Pin your location</b>
+    </div>
+    <div class="mapwrap">
+      <div id="lmap"></div>
+      <svg class="pin" width="40" height="52" viewBox="0 0 40 52" aria-hidden="true"><path d="M20 51C20 51 38 31 38 19A18 18 0 0 0 2 19C2 31 20 51 20 51Z" fill="#C2462A" stroke="#FFFFFF" stroke-width="2.5"/><circle cx="20" cy="19" r="6.5" fill="#FFFFFF"/></svg>
+    </div>
+    <div class="mapfoot">
+      <p id="mapmsg">Move the map so the pin sits on your gate or building.</p>
+      <div class="mapbtns">
+        <button class="btn dark press" data-act="locate">Use my location</button>
+        <button class="btn press" data-act="mapok">Confirm this spot</button>
+      </div>
+    </div>
+  </div>
 </div>
 <noscript><p style="padding:24px;color:#ECE6D6">Blio needs JavaScript to take orders. You can also order on WhatsApp: +91 88568 88766.</p></noscript>
 <script src="/products.js"></script>
