@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blio · Fresh seafood in Kolhapur</title>
+<meta name="description" content="Pre-order fresh fish, prawns and crab from Goa and Konkan boats. Cleaned and cut in Kolhapur, delivered next evening.">
+<meta name="theme-color" content="#12404A">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Blio">
+<meta property="og:title" content="Blio · Fresh seafood in Kolhapur">
+<meta property="og:description" content="Order by 6 PM on Monday, Wednesday or Saturday. Delivered next evening.">
+<meta property="og:image" content="https://blio.in/icons/icon-512.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&family=Mukta:wght@400;600&display=swap">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div id="app" class="app">
+  <header class="top">
+    <button class="icon-btn press" id="back" aria-label="Back to the catch" hidden>
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <a href="/" class="brand" aria-label="Blio home"><img src="/icons/wordmark-dark.svg" alt="Blio" width="72" height="36"></a>
+    <span class="place">Kolhapur</span>
+  </header>
+  <main id="main" class="main" tabindex="-1"></main>
+  <button class="slip-bar press" id="slipbar" aria-label="Open your slip"></button>
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Item"></div>
+</div>
+<noscript><p style="padding:24px;color:#ECE6D6">Blio needs JavaScript to take orders. You can also order on WhatsApp: +91 88568 88766.</p></noscript>
+<script src="/products.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

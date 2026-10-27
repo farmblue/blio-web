@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Blio">
+<rect width="200" height="200" rx="44" fill="#12404A"/>
+<g transform="translate(0.0 0.0) scale(1.0)">
+<g transform="translate(0 22)" fill="none" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round">
+<path d="M 61 30 L 61 140"/><path d="M 61 105 A 26 26 0 1 1 113 105 A 26 26 0 1 1 61 105"/>
+</g>
+<path d="M 120 50 C 128 37 144 37 150 50 C 144 63 128 63 120 50 Z M 147 50 L 161 40 L 156 50 L 161 60 Z" fill="#C2462A"/>
+</g>
+</svg>

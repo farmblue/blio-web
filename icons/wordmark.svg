@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 280 140" role="img" aria-label="Blio">
+<path d="M 29 30 L 29 140" fill="none" stroke="#12404A" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 29 105 A 26 26 0 1 1 81 105 A 26 26 0 1 1 29 105" fill="none" stroke="#12404A" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 113 30 L 113 140" fill="none" stroke="#12404A" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 145 70 L 145 140" fill="none" stroke="#12404A" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="145" cy="46" r="11" fill="#C2462A"/>
+<path d="M 229 105 A 26 26 0 1 0 177 105 A 26 26 0 1 0 229 105" fill="none" stroke="#12404A" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 233 105 L 260 84 L 254 105 L 260 126 Z" fill="#C2462A"/>
+<circle cx="194" cy="98" r="5" fill="#12404A"/>
+</svg>
