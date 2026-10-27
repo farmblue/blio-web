@@ -9,7 +9,7 @@
     orderDays: [1, 3, 6],              // Monday, Wednesday, Saturday
     openHour: 8, closeHour: 18,        // 8 AM to 6 PM, India time
     // Web app URL of the Blio admin sheet's script. Leave empty to use the sample list in products.js.
-    api: ''
+    api: 'https://script.google.com/macros/s/AKfycbyYRFQbohQm2STP3hSZB6G3iq2kdop0Vw2XV3BN-cOfQev1-QHH16nxOgc57oWv1r8Y/exec'
   };
 
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
