@@ -8,8 +8,8 @@
     deliveryFee: 40,                   // Rs, home delivery
     orderDays: [1, 3, 6],              // Monday, Wednesday, Saturday
     openHour: 8, closeHour: 18,        // 8 AM to 6 PM, India time
-    // Published Google Sheet (File > Share > Publish to web > CSV). Leave empty to use products.js.
-    sheetCsv: ''
+    // Web app URL of the Blio admin sheet's script. Leave empty to use the sample list in products.js.
+    api: ''
   };
 
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -31,7 +31,10 @@
     openGroup: 'Fish',
     pick: null,                 // {id, pack, cut, qty}
     cart: store('cart') || [],
-    form: Object.assign({ name: '', address: '', area: '', notes: '' }, store('form') || {}, { fulfil: 'delivery' }),
+    form: Object.assign({ name: '', phone: '', address: '', area: '', notes: '' }, store('form') || {}, { fulfil: 'delivery' }),
+    sending: false,
+    short: null,
+    live: false,
     errors: {},
     last: null,
     installDismissed: !!store('installDismissed')
@@ -48,7 +51,7 @@
         open: true, day: DAYS[dow], delivery: DAYS[(dow + 1) % 7],
         left: (Math.floor(mins / 60) ? Math.floor(mins / 60) + 'h ' : '') + (mins % 60) + 'm',
         line: 'Orders close at 6 PM today. Everything is bought fresh against your order.',
-        cta: 'Orders close at 6 PM today. Send your order on WhatsApp.'
+        cta: 'Orders close at 6 PM today. Pick your fish and place the order.'
       };
     }
     for (var i = 0; i < 8; i++) {
@@ -57,49 +60,36 @@
         var when = i === 0 ? 'today' : (i === 1 ? 'tomorrow' : DAYS[d.getDay()]);
         return {
           open: false, day: DAYS[d.getDay()], delivery: DAYS[(d.getDay() + 1) % 7], left: '',
-          line: 'The next order window opens ' + when + ' at 8 AM. You can send your order now and it joins that window.',
-          cta: 'Next window opens ' + when + ' at 8 AM. Send your order now to hold your place.'
+          line: 'The next order window opens ' + when + ' at 8 AM. You can place your order now and it joins that window.',
+          cta: 'Next window opens ' + when + ' at 8 AM. Place your order now to hold your place.'
         };
       }
     }
     return { open: false, day: 'Next', delivery: 'the next day', left: '', line: '', cta: '' };
   }
 
-  // ---------- products from Google Sheet ----------
-  function parseCsv(text) {
-    var rows = [], row = [], cell = '', q = false;
-    for (var i = 0; i < text.length; i++) {
-      var c = text[i];
-      if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else { q = false; } } else { cell += c; } }
-      else if (c === '"') { q = true; }
-      else if (c === ',') { row.push(cell); cell = ''; }
-      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') { i++; } row.push(cell); rows.push(row); row = []; cell = ''; }
-      else { cell += c; }
-    }
-    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
-    return rows.filter(function (r) { return r.some(function (x) { return x.trim() !== ''; }); });
+  // ---------- products from the admin sheet ----------
+  function applyApi(d) {
+    if (!d || !d.products || !d.products.length) { return false; }
+    S.products = d.products; S.live = true;
+    if (typeof d.deliveryFee === 'number') { CONFIG.deliveryFee = d.deliveryFee; }
+    return true;
   }
-  function loadSheet() {
-    if (!CONFIG.sheetCsv) { return; }
-    fetch(CONFIG.sheetCsv, { cache: 'no-store' }).then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.text(); }).then(function (t) {
-      var rows = parseCsv(t), head = rows.shift().map(function (h) { return h.trim().toLowerCase(); });
-      var col = function (r, k) { var i = head.indexOf(k); return i > -1 ? (r[i] || '').trim() : ''; };
-      var list = rows.map(function (r) {
-        var name = col(r, 'name'); if (!name) { return null; }
-        var avail = col(r, 'available').toLowerCase();
-        return {
-          id: (col(r, 'id') || name).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-          group: GROUPS.indexOf(col(r, 'group')) > -1 ? col(r, 'group') : 'Fish',
-          name: name, en: col(r, 'english name'), mr: col(r, 'marathi name'),
-          price: parseFloat(col(r, 'price per kg').replace(/[^0-9.]/g, '')) || 0,
-          origin: col(r, 'from') || 'the Konkan coast',
-          cuts: (col(r, 'cuts') || 'Whole').split('|').map(function (x) { return x.trim(); }).filter(Boolean),
-          available: !(avail === 'no' || avail === 'n' || avail === 'sold out' || avail === 'false')
-        };
-      }).filter(function (p) { return p && p.price > 0; });
-      if (list.length) { S.products = list; render(false); }
-    }).catch(function () { /* keep built-in list */ });
+  function loadApi() {
+    if (!CONFIG.api) { return; }
+    var cached = store('api'); if (applyApi(cached)) { render(false); }
+    fetch(CONFIG.api, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+      if (applyApi(d)) { store('api', d); keepScroll(); }
+    }).catch(function () { /* keep cached or built-in list */ });
   }
+  function keepScroll() { var st = main.scrollTop; render(false); main.scrollTop = st; }
+  function kgLeft(p) {
+    if (!p.available) { return 0; }
+    if (p.left === null || p.left === undefined) { return Infinity; }
+    var inCart = S.cart.filter(function (l) { return l.id === p.id; }).reduce(function (a, l) { return a + kgOf(l.pack) * l.qty; }, 0);
+    return Math.max(0, p.left - inCart);
+  }
+  function fmtKg(n) { return (Math.round(n * 10) / 10).toString().replace(/\.0$/, '') + ' kg'; }
 
   // ---------- cart ----------
   function totals() {
@@ -109,7 +99,7 @@
     return { sub: sub, fee: fee, total: sub + fee, count: count };
   }
   function saveCart() { store('cart', S.cart); }
-  function saveForm() { store('form', { name: S.form.name, fulfil: S.form.fulfil, address: S.form.address, area: S.form.area }); }
+  function saveForm() { store('form', { name: S.form.name, phone: S.form.phone, address: S.form.address, area: S.form.area }); }
 
   // ---------- drawings ----------
   var ART = {
@@ -128,9 +118,11 @@
       if (!items.length) { return ''; }
       var open = S.openGroup === g;
       var rows = open ? '<div class="items">' + items.map(function (p, i) {
-        return '<button class="row item enter' + (p.available ? '' : ' out') + '" data-act="item" data-id="' + esc(p.id) + '" style="animation-delay:' + (i * 40) + 'ms"' + (p.available ? '' : ' aria-disabled="true"') + '>' +
-          '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + '</span></span>' +
-          '<span class="p num">' + (p.available ? rs(p.price) + '/kg' : 'Sold out') + '</span></button>';
+        var out = !p.available || p.left === 0, low = !out && p.left !== null && p.left !== undefined && p.left <= 5;
+        return '<button class="row item enter' + (out ? ' out' : '') + '" data-act="item" data-id="' + esc(p.id) + '" style="animation-delay:' + (i * 40) + 'ms"' + (out ? ' aria-disabled="true"' : '') + '>' +
+          '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + '</span>' +
+          (low ? '<span class="low">Only ' + fmtKg(p.left) + ' left</span>' : '') + '</span>' +
+          '<span class="p num">' + (out ? 'Sold out' : rs(p.price) + '/kg') + '</span></button>';
       }).join('') + '</div>' : '';
       return '<div class="group"><button class="row g-head" data-act="group" data-g="' + esc(g) + '" aria-expanded="' + open + '">' +
         '<span class="lbl">' + esc(g) + '</span><span class="mr">' + GROUP_MR[g] + '</span><span class="n num">' + items.length + '</span>' + PLUS + '</button>' + rows + '</div>';
@@ -152,7 +144,7 @@
       '<div class="groups">' + groups + '</div></section>' +
       '<section class="how"><h2 class="anton">Boat to door</h2><div class="rail-bar"><span id="railbar"></span></div>' +
       '<div class="rail" id="rail">' +
-        step('You order by 6 PM', 'Pick the fish, the pack size and the cut, then send the order on WhatsApp.', 32, '#2456A6', '<svg width="170" height="170" viewBox="0 0 170 170" aria-hidden="true"><circle cx="85" cy="85" r="72" fill="#ECE6D6"/><circle cx="85" cy="85" r="6" fill="#12272C"/><rect x="82" y="34" width="6" height="54" fill="#12272C"/><rect x="82" y="82" width="40" height="6" fill="#C2462A"/></svg>') +
+        step('You order by 6 PM', 'Pick the fish, the pack size and the cut, then confirm on WhatsApp.', 32, '#2456A6', '<svg width="170" height="170" viewBox="0 0 170 170" aria-hidden="true"><circle cx="85" cy="85" r="72" fill="#ECE6D6"/><circle cx="85" cy="85" r="6" fill="#12272C"/><rect x="82" y="34" width="6" height="54" fill="#12272C"/><rect x="82" y="82" width="40" height="6" fill="#C2462A"/></svg>') +
         step('We buy from the boats', 'Only what was ordered, straight from fishermen in North Goa and on the Konkan coast.', 64, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
         step('Cleaned to your cut', 'Whole, curry cut, steaks or fillet, done by hand in Kolhapur.', 40, '#ECE6D6', '<svg width="220" height="120" viewBox="0 0 220 120" aria-hidden="true"><path d="M14 60C56 14 140 14 176 60C140 106 56 106 14 60Z" fill="#2456A6"/><path d="M172 60l38-30v60z" fill="#2456A6"/><circle cx="46" cy="54" r="6" fill="#ECE6D6"/><rect x="84" y="20" width="6" height="80" fill="#ECE6D6"/><rect x="112" y="22" width="6" height="76" fill="#ECE6D6"/><rect x="140" y="30" width="6" height="60" fill="#ECE6D6"/></svg>') +
         step('At your door by 9 PM', 'Next evening, packed on ice and brought to your door.', 52, '#195360', '<svg width="180" height="180" viewBox="0 0 180 180" aria-hidden="true"><path d="M20 84L90 26l70 58v80H20z" fill="#ECE6D6"/><rect x="72" y="108" width="36" height="56" fill="#C2462A"/><rect x="38" y="98" width="24" height="24" fill="#2456A6"/><rect x="118" y="98" width="24" height="24" fill="#2456A6"/></svg>') +
@@ -216,6 +208,8 @@
       '</div>' +
       '<div class="fld"><label for="f-name">Your name</label><input id="f-name" data-f="name" autocomplete="name" value="' + esc(f.name) + '" placeholder="Name for the order">' +
         (e.name ? '<span class="err">Please add your name.</span>' : '') + '</div>' +
+      '<div class="fld"><label for="f-phone">Mobile number</label><input id="f-phone" data-f="phone" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="14" value="' + esc(f.phone) + '" placeholder="10-digit number">' +
+        (e.phone ? '<span class="err">Please enter a 10-digit mobile number.</span>' : '') + '</div>' +
       '<div class="fld"><span class="lab" style="font-size:16px">How you get it</span>' +
         '<div class="seg dark" data-on="' + (del ? 0 : 1) + '"><span class="ind"></span>' +
         '<button data-act="fulfil" data-v="delivery" aria-pressed="' + del + '">Home delivery</button>' +
@@ -226,21 +220,23 @@
         '<div class="fld"><label for="f-area">Area in Kolhapur</label><input id="f-area" data-f="area" placeholder="For example Rajarampuri, Tarabai Park" value="' + esc(f.area) + '"></div>'
         : '<div class="box">Collect from the Blio cleaning point in Kolhapur, ' + esc(w.delivery) + ', 5 to 9 PM. We share the exact location on WhatsApp.</div>') +
       '<div class="fld"><label for="f-notes">Notes (optional)</label><input id="f-notes" data-f="notes" placeholder="Cleaning preferences, timing" value="' + esc(f.notes) + '"></div>' +
-      '<button class="btn big press" data-act="send">Send order on WhatsApp</button>' +
-      '<span class="muted-g">WhatsApp opens with your order typed in. Tap send there. You pay by UPI after we confirm the bill.</span>' +
+      (S.short ? '<div class="box warn" role="alert">' + esc(S.short) + '</div>' : '') +
+      (e.server ? '<div class="box warn" role="alert">We couldn’t place the order. Check your internet connection and try again.</div>' : '') +
+      '<button class="btn big press" data-act="send"' + (S.sending ? ' disabled' : '') + '>' + (S.sending ? 'Placing your order…' : 'Place order') + '</button>' +
+      '<span class="muted-g">Next you send the order to us on WhatsApp. You pay by UPI after we confirm the final bill.</span>' +
       '</div>';
   }
 
   function doneHtml(anim) {
     var o = S.last || {};
     return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="ticket">' +
-      '<div class="in"><h1 class="anton" style="font-size:96px;line-height:.84">Sent</h1>' +
-      '<p>Order ' + esc(o.id) + ' for ' + rs(o.total || 0) + ' is ready in WhatsApp. If you haven’t tapped send there yet, do it now. We reply with the final bill and a UPI request.</p></div>' +
+      '<div class="in"><h1 class="anton" style="font-size:96px;line-height:.84">Placed</h1>' +
+      '<p>Order ' + esc(o.id) + ' for ' + rs(o.total || 0) + '. One last step: send it to us on WhatsApp so we can confirm the bill and share the UPI request.</p>' +
+      '<a class="btn big press" href="' + esc(o.url) + '" target="_blank" rel="noopener">Send on WhatsApp</a></div>' +
       '<div class="perf"></div><div style="padding:18px 22px 24px;display:flex;flex-direction:column;gap:12px">' +
       '<span class="note">Delivered ' + esc(o.delivery) + ', 5 to 9 PM</span>' +
       '<div class="progress"><span class="on"></span><span></span><span></span><span></span></div>' +
-      '<div class="plabels"><b>Sent</b><span>Confirmed</span><span>Cleaned</span><span>Delivered</span></div></div></div>' +
-      '<a class="btn big press" href="' + esc(o.url) + '" target="_blank" rel="noopener">Open WhatsApp again</a>' +
+      '<div class="plabels"><b>Placed</b><span>Confirmed</span><span>Cleaned</span><span>Delivered</span></div></div></div>' +
       '<button class="btn dark press" data-act="home">Back to the catch</button></div>';
   }
 
@@ -261,11 +257,13 @@
       '</div></div>' +
       '<div class="addrow"><div class="qty"><button class="press" data-act="qdec" aria-label="One less">−</button><span class="num">' + k.qty + '</span>' +
         '<button class="press" data-act="qinc" aria-label="One more">+</button></div>' +
-        '<button class="btn press num" data-act="add">Add to slip · ' + rs(p.price * kgOf(k.pack) * k.qty) + '</button></div></div>';
+        (kgOf(k.pack) * k.qty > kgLeft(p)
+          ? '<button class="btn num" disabled>Only ' + fmtKg(kgLeft(p)) + ' left</button></div></div>'
+          : '<button class="btn press num" data-act="add">Add to slip · ' + rs(p.price * kgOf(k.pack) * k.qty) + '</button></div></div>');
   }
   function findP(id) { return S.products.filter(function (p) { return p.id === id; })[0] || S.products[0]; }
   function openSheet(id) {
-    var p = findP(id); if (!p || !p.available) { return; }
+    var p = findP(id); if (!p || kgLeft(p) <= 0 && p.left !== null && p.left !== undefined || !p.available) { return; }
     S.pick = { id: p.id, pack: '1 kg', cut: p.cuts[0], qty: 1 };
     sheetEl.innerHTML = sheetHtml(); sheetEl.setAttribute('aria-label', p.name);
     sheetEl.scrollTop = 0; sheetEl.classList.add('show'); scrim.classList.add('show');
@@ -303,26 +301,52 @@
     var n = istNow();
     return 'BL' + String(n.getDate()).padStart(2, '0') + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(Math.floor(100 + Math.random() * 900));
   }
-  function send() {
-    var f = S.form, e = {};
-    if (!f.name.trim()) { e.name = true; }
-    if (f.fulfil === 'delivery' && !f.address.trim()) { e.address = true; }
-    S.errors = e;
-    if (e.name || e.address) { render(false); var el = $(e.name ? '#f-name' : '#f-addr'); if (el) { el.focus(); } return; }
-    var w = windowInfo(), t = totals(), id = orderId();
-    var msg = ['New Blio order ' + id, 'For ' + w.day + '’s window, delivery ' + w.delivery + ' 5 to 9 PM', ''];
-    S.cart.forEach(function (l, i) { msg.push((i + 1) + '. ' + l.name + ', ' + l.pack + ', ' + l.cut + ' x' + l.qty + ' = ' + rs(l.price * kgOf(l.pack) * l.qty)); });
-    msg.push('', 'Subtotal: ' + rs(t.sub), 'Delivery: ' + (t.fee ? rs(t.fee) : 'Free (pickup)'), 'Estimated total: ' + rs(t.total), '');
-    msg.push('Name: ' + f.name.trim());
-    if (f.fulfil === 'delivery') { msg.push('Home delivery: ' + f.address.trim().replace(/\s*\n\s*/g, ', ') + (f.area.trim() ? ', ' + f.area.trim() : '')); }
-    else { msg.push('Self pickup'); }
+  function waText(o, f, w) {
+    var msg = ['Blio order ' + o.id, 'For ' + w.day + '’s window, delivery ' + w.delivery + ' 5 to 9 PM', ''];
+    o.lines.forEach(function (l, i) { msg.push((i + 1) + '. ' + l.name + ', ' + l.pack + ', ' + l.cut + ' x' + l.qty + ' = ' + rs(l.total)); });
+    msg.push('', 'Subtotal: ' + rs(o.subtotal), 'Delivery: ' + rs(o.fee), 'Estimated total: ' + rs(o.total), '');
+    msg.push('Name: ' + f.name.trim(), 'Mobile: ' + f.phone);
+    msg.push('Address: ' + f.address.trim().replace(/\s*\n\s*/g, ', ') + (f.area.trim() ? ', ' + f.area.trim() : ''));
     if (f.notes.trim()) { msg.push('Notes: ' + f.notes.trim()); }
     msg.push('Payment: UPI after confirmation');
-    var url = 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(msg.join('\n'));
-    S.last = { id: id, total: t.total, delivery: w.delivery, url: url, text: msg.join('\n') };
-    S.cart = []; saveCart(); S.form.notes = ''; saveForm();
-    window.open(url, '_blank', 'noopener');
+    return msg.join('\n');
+  }
+  function finish(o) {
+    var w = windowInfo(), f = S.form;
+    o.url = 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(waText(o, f, w));
+    o.delivery = w.delivery;
+    S.last = o; S.cart = []; saveCart(); S.form.notes = ''; saveForm(); S.sending = false; S.short = null;
     go('done');
+  }
+  function send() {
+    if (S.sending) { return; }
+    var f = S.form, e = {};
+    f.phone = String(f.phone || '').replace(/[^0-9]/g, '').slice(-10);
+    if (!f.name.trim()) { e.name = true; }
+    if (f.phone.length !== 10) { e.phone = true; }
+    if (!f.address.trim()) { e.address = true; }
+    S.errors = e; S.short = null;
+    if (e.name || e.phone || e.address) { keepScroll(); var el = $(e.name ? '#f-name' : e.phone ? '#f-phone' : '#f-addr'); if (el) { el.focus(); } return; }
+    var lines = S.cart.map(function (l) { return { name: l.name, pack: l.pack, cut: l.cut, qty: l.qty, total: l.price * kgOf(l.pack) * l.qty }; });
+    if (!CONFIG.api) {
+      var t = totals(), n = istNow();
+      finish({ id: 'BL' + String(n.getDate()).padStart(2, '0') + String(n.getMonth() + 1).padStart(2, '0') + '-' + Math.floor(100 + Math.random() * 900), lines: lines, subtotal: t.sub, fee: t.fee, total: t.total });
+      return;
+    }
+    S.sending = true; keepScroll();
+    fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, items: lines }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) { finish({ id: d.id, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total }); return; }
+        S.sending = false;
+        if (d.error === 'stock') {
+          if (d.products) { applyApi({ products: d.products }); }
+          S.short = 'Some items ran short while you were ordering: ' + d.short.map(function (x) { return x.name + (x.left ? ' (only ' + fmtKg(x.left) + ' left)' : ' (sold out)'); }).join(', ') + '. Please change your slip and place the order again.';
+        } else { S.errors = { server: true }; }
+        keepScroll();
+      })
+      .catch(function () { S.sending = false; S.errors = { server: true }; keepScroll(); });
   }
 
   // ---------- render ----------
@@ -398,6 +422,6 @@
 
   if (location.hash === '#slip') { S.screen = 'slip'; }
   render(true);
-  loadSheet();
+  loadApi();
   if ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('/sw.js').catch(function () {}); }
 })();

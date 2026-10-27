@@ -210,3 +210,5 @@ a{color:inherit}
 
 .seg button.soon{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--muted-g);cursor:not-allowed;line-height:1.1}
 .seg button.soon small{font-size:12px;font-weight:500}
+.item .low{font-size:13px;font-weight:600;color:#F2B49F;margin-top:2px}
+.box.warn{background:#5A2318;color:#FFE3DA;font-size:15px}
