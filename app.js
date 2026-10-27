@@ -41,6 +41,7 @@
     errors: {},
     last: null,
     upi: '', payee: '',
+    myorders: store('myorders') || [], ordLoading: false, ordErr: '', ordNote: '',
     dpin: store('dpin') || '', deliv: null, dErr: '', dLoading: false, dConfirm: '',
     installDismissed: !!store(window.BLIO_MODE === 'delivery' ? 'installDismissedD' : 'installDismissed')
   };
@@ -248,7 +249,86 @@
       '<span class="note">Delivered ' + esc(o.delivery) + ', 5 to 9 PM</span>' +
       '<div class="progress"><span class="on"></span><span></span><span></span><span></span></div>' +
       '<div class="plabels"><b>Placed</b><span>Confirmed</span><span>Cleaned</span><span>Delivered</span></div></div></div>' +
+      '<button class="btn dark press" data-act="orders">Track this order</button>' +
       '<button class="btn dark press" data-act="home">Back to the catch</button></div>';
+  }
+
+  // ---------- my orders ----------
+  var STEP_OF = { 'New': 0, 'Confirmed': 1, 'Paid': 2, 'Delivered': 3 };
+  function loadMyOrders() {
+    var withTok = S.myorders.filter(function (o) { return o.token; });
+    if (!CONFIG.api || !withTok.length) { return; }
+    S.ordLoading = true; S.ordErr = ''; if (S.screen === 'orders') { keepScroll(); }
+    var ids = withTok.slice(0, 50).map(function (o) { return o.id + ':' + o.token; }).join(',');
+    fetch(CONFIG.api + '?action=myorders&ids=' + encodeURIComponent(ids), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        S.ordLoading = false;
+        if (d.ok) {
+          var by = {}; d.orders.forEach(function (x) { by[x.id] = x; });
+          S.myorders.forEach(function (o) { var x = by[o.id]; if (x) { o.status = x.status; o.final = x.final; o.bill = x.bill; o.deliveredAt = x.deliveredAt; o.total = x.total || o.total; } });
+          store('myorders', S.myorders);
+        } else { S.ordErr = 'Couldn’t check the latest status. Showing what was last seen.'; }
+        if (S.screen === 'orders') { keepScroll(); }
+      })
+      .catch(function () { S.ordLoading = false; S.ordErr = 'No connection. Showing the status last seen on this phone.'; if (S.screen === 'orders') { keepScroll(); } });
+  }
+  function orderCard(o) {
+    var st = o.status || 'New', amount = o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total;
+    var when = new Date(o.placedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    var text = {
+      'New': 'Placed. We confirm it on WhatsApp with the final bill.',
+      'Confirmed': 'Confirmed. Your fish is bought and cleaned for ' + (o.delivery || 'delivery') + ' evening.',
+      'Paid': 'Paid. Arriving ' + (o.delivery || 'on delivery day') + ', 5 to 9 PM.',
+      'Delivered': 'Delivered' + (o.deliveredAt ? ' on ' + o.deliveredAt : '') + '.',
+      'Cancelled': 'This order was cancelled.'
+    }[st] || st;
+    var step = STEP_OF[st], prog = st === 'Cancelled' ? '' :
+      '<div class="progress">' + [0, 1, 2, 3].map(function (i) { return '<span' + (i <= step ? ' class="on"' : '') + '></span>'; }).join('') + '</div>' +
+      '<div class="plabels">' + ['Placed', 'Confirmed', 'Paid', 'Delivered'].map(function (l, i) { return i === step ? '<b>' + l + '</b>' : '<span>' + l + '</span>'; }).join('') + '</div>';
+    var items = (o.lines || []).map(function (l) { return esc(l.name) + ' ' + esc(l.pack) + (l.qty > 1 ? ' x' + l.qty : ''); }).join(', ');
+    var canPay = st === 'Confirmed' && S.upi;
+    return '<div class="ocard' + (st === 'Cancelled' ? ' cancelled' : '') + '">' +
+      '<div class="dtop"><b>' + esc(o.id) + '</b><span class="num">' + rs(amount) + '</span></div>' +
+      '<span class="dsub">' + when + (o.day ? ' · ' + esc(o.day) + '’s window' : '') + '</span>' +
+      '<p class="ditems">' + items + '</p>' +
+      '<p class="ostat">' + esc(text) + '</p>' + prog +
+      '<div class="obtns">' +
+        (canPay ? '<a class="btn press" href="#pay?o=' + encodeURIComponent(o.id) + '&a=' + Math.round(amount) + '">Pay ' + rs(amount) + '</a>' : '') +
+        (o.bill ? '<a class="btn dark" href="' + esc(o.bill) + '" target="_blank" rel="noopener">View bill</a>' : '') +
+        '<button class="btn dark press" data-act="reorder" data-id="' + esc(o.id) + '">Order again</button>' +
+      '</div></div>';
+  }
+  function ordersHtml(anim) {
+    var active = S.myorders.filter(function (o) { return o.status !== 'Delivered' && o.status !== 'Cancelled'; });
+    var past = S.myorders.filter(function (o) { return o.status === 'Delivered' || o.status === 'Cancelled'; });
+    return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="dhead"><h1 class="anton">Your orders</h1>' +
+        '<span class="dcount">' + (S.ordLoading ? 'Checking…' : '') + '</span></div>' +
+      (S.ordNote ? '<div class="box" role="status">' + esc(S.ordNote) + '</div>' : '') +
+      (S.ordErr ? '<div class="box warn" role="alert">' + esc(S.ordErr) + '</div>' : '') +
+      (!S.myorders.length ? '<div class="box">No orders on this phone yet. Orders you place from this phone show up here, with their status.</div>' +
+        '<button class="btn big press" data-act="home">Choose from the catch</button>' : '') +
+      (active.length ? '<h2 class="osec">On the way</h2>' + active.map(orderCard).join('') : '') +
+      (past.length ? '<h2 class="osec">Past orders</h2>' + past.map(orderCard).join('') : '') +
+      (S.myorders.length ? '<span class="muted-g">Shows orders placed from this phone. Questions? WhatsApp <a href="https://wa.me/' + CONFIG.whatsapp + '">+91 88568 88766</a>.</span>' : '') +
+      '</div>';
+  }
+  function reorder(id) {
+    var o = S.myorders.filter(function (x) { return x.id === id; })[0]; if (!o) { return; }
+    var added = 0, missed = [];
+    (o.lines || []).forEach(function (l) {
+      var p = S.products.filter(function (x) { return x.name === l.name; })[0];
+      if (!p || !p.available || kgOf(l.pack) * l.qty > kgLeft(p)) { missed.push(l.name); return; }
+      var cut = p.cuts.indexOf(l.cut) > -1 ? l.cut : p.cuts[0], key = p.id + '|' + l.pack + '|' + cut;
+      var hit = S.cart.filter(function (c) { return c.key === key; })[0];
+      if (hit) { hit.qty += l.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, pack: l.pack, cut: cut, qty: l.qty, price: p.price }); }
+      added++;
+    });
+    saveCart();
+    if (!added) { S.ordNote = 'None of these items are available right now.'; keepScroll(); return; }
+    S.ordNote = '';
+    go('slip');
+    if (missed.length) { S.short = 'Not available right now, so left out: ' + missed.join(', ') + '. Prices are today’s.'; keepScroll(); }
   }
 
   // ---------- sheet ----------
@@ -327,6 +407,9 @@
     var w = windowInfo(), f = S.form;
     o.url = 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(waText(o, f, w));
     o.delivery = w.delivery;
+    S.myorders.unshift({ id: o.id, token: o.token || '', placedAt: Date.now(), day: w.day, delivery: w.delivery,
+      lines: o.lines, total: o.total, final: '', status: 'New', bill: '' });
+    S.myorders = S.myorders.slice(0, 50); store('myorders', S.myorders);
     S.last = o; S.cart = []; saveCart(); S.form.notes = ''; saveForm(); S.sending = false; S.short = null;
     go('done');
   }
@@ -350,7 +433,7 @@
       body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.ok) { finish({ id: d.id, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total }); return; }
+        if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total }); return; }
         S.sending = false;
         if (d.error === 'stock') {
           if (d.products) { applyApi({ products: d.products }); }
@@ -498,6 +581,7 @@
     else if (S.screen === 'slip') { main.innerHTML = slipHtml(anim); }
     else if (S.screen === 'delivery') { main.innerHTML = deliveryHtml(anim); }
     else if (S.screen === 'pay') { main.innerHTML = payHtml(anim); }
+    else if (S.screen === 'orders') { main.innerHTML = ordersHtml(anim); }
     else { main.innerHTML = doneHtml(anim); }
     back.hidden = S.screen === 'home' || DELIVERY_APP;
     var t = totals();
@@ -517,11 +601,13 @@
     if (h === '#slip') { return 'slip'; }
     if (h === '#delivery') { return 'delivery'; }
     if (h.indexOf('#pay') === 0) { return 'pay'; }
+    if (h === '#orders') { return 'orders'; }
     return 'home';
   }
   function enterRoute() {
     S.screen = route();
     if (S.screen === 'delivery' && S.dpin && !S.deliv) { loadDeliveries(); }
+    if (S.screen === 'orders') { S.ordNote = ''; loadMyOrders(); }
     render(true);
   }
   window.addEventListener('popstate', function () {
@@ -560,6 +646,8 @@
       case 'fulfil': S.form.fulfil = v; saveForm(); render(false); break;
       case 'send': send(); break;
       case 'map': openMap(); break;
+      case 'orders': e.preventDefault(); S.ordNote = ''; go('orders'); loadMyOrders(); break;
+      case 'reorder': reorder(a.getAttribute('data-id')); break;
       case 'mapclose': closeMap(); break;
       case 'locate': locate(); break;
       case 'mapok': confirmMap(); break;

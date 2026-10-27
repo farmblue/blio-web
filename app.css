@@ -251,3 +251,14 @@ a{color:inherit}
 
 /* pay */
 .upi{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--paper-2);padding:10px 10px 10px 16px;font-size:17px;font-weight:600;word-break:break-all}
+
+/* my orders */
+.ordlink{text-decoration:none;color:var(--paper);font-weight:600;padding:12px 0;border-bottom:2px solid var(--action)}
+.osec{margin:8px 0 -6px;font-size:15px;font-weight:600;color:var(--muted-g);text-transform:uppercase;letter-spacing:.06em}
+.ocard{background:var(--paper);color:var(--ink);padding:18px;display:flex;flex-direction:column;gap:10px}
+.ocard.cancelled{opacity:.6}
+.ocard .dtop span{font-size:17px;font-weight:700}
+.ocard p{margin:0;font-size:15px;line-height:1.45}
+.ostat{font-weight:600}
+.obtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.obtns .btn{flex:1 1 140px;height:46px;font-size:15px}

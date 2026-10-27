@@ -4,6 +4,7 @@
  *
  * GET                     products with price, availability and kg left for the current order window
  * GET  ?action=deliveries orders to deliver (needs the delivery PIN)
+ * GET  ?action=myorders   status of a customer's own orders (each order needs its secret token)
  * POST order              saves an order after checking stock; prices always come from the sheet
  * POST action=delivered   marks an order Delivered (needs the delivery PIN)
  * Sheet menu Blio > Make bill for selected order   PDF bill in Drive plus a WhatsApp link to send it
@@ -16,7 +17,7 @@ var GROUPS = ['Fish', 'Prawns', 'Crabs and clams', 'Dried'];
 var PACKS = { '500 g': 0.5, '1 kg': 1 };
 var MAX_QTY = 20;
 var ORDER_COLS = ['Order ID', 'Placed at', 'Window', 'Name', 'Mobile', 'Address', 'Area', 'Items', 'Subtotal', 'Delivery',
-  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at'];
+  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token'];
 var SETTINGS = [
   ['Current window (filled in automatically)', ''],
   ['Delivery fee (₹)', 40],
@@ -170,9 +171,35 @@ function deliveries_() {
   return out;
 }
 
+/** A customer's own orders. ids is "BL2810-001:token,BL2810-004:token"; an order is returned only if its token matches. */
+function myOrders_(ids) {
+  var want = {};
+  ids.split(',').slice(0, 50).forEach(function (pair) {
+    var p = pair.split(':');
+    if (p[0] && p[1] && p[1].length >= 12) want[p[0].trim()] = p[1].trim();
+  });
+  if (!Object.keys(want).length) return [];
+  var sh = sheet_('Orders'), c = colIndex_(sh);
+  if (!c['Token']) return [];
+  var v = sh.getDataRange().getDisplayValues(), raw = sh.getDataRange().getValues(), out = [], found = {};
+  var get = function (r, k) { return c[k] ? r[c[k] - 1] : ''; };
+  for (var i = 1; i < v.length; i++) {
+    var id = String(get(v[i], 'Order ID'));
+    if (!want[id] || want[id] !== String(get(v[i], 'Token'))) continue;
+    found[id] = true;
+    out.push({
+      id: id, status: String(get(v[i], 'Status')).trim() || 'New', window: String(get(v[i], 'Window')),
+      total: Number(get(raw[i], 'Total')) || 0, final: get(raw[i], 'Final amount') === '' ? '' : Number(get(raw[i], 'Final amount')),
+      bill: String(get(v[i], 'Bill') || ''), deliveredAt: String(get(v[i], 'Delivered at') || '')
+    });
+  }
+  return out;
+}
+
 // ---------- web app ----------
 function doGet(e) {
   var p = (e && e.parameter) || {};
+  if (p.action === 'myorders') return json_({ ok: true, orders: myOrders_(String(p.ids || '')) });
   if (p.action === 'deliveries') {
     var chk = pinCheck_(p.pin);
     if (chk !== 'ok') return json_({ ok: false, error: chk === 'locked' ? 'locked' : 'pin' });
@@ -249,11 +276,12 @@ function placeOrder_(o) {
   var orders = sheet_('Orders'), c = colIndex_(orders), width = orders.getLastColumn();
   var id = 'BL' + Utilities.formatDate(new Date(), TZ, 'ddMM') + '-' + ('00' + orders.getLastRow()).slice(-3);
   var placed = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a');
+  var token = Utilities.getUuid().replace(/-/g, '').slice(0, 16);
   var summary = lines.map(function (l) { return l.name + ' ' + l.pack + ' ' + l.cut + ' x' + l.qty; }).join('; ');
 
   var values = {
     'Order ID': id, 'Placed at': placed, 'Window': w, 'Name': name, 'Mobile': phone, 'Address': address, 'Area': area,
-    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub + fee, 'Status': 'New', 'Notes': notes, 'Map': map
+    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub + fee, 'Status': 'New', 'Notes': notes, 'Map': map, 'Token': token
   };
   var row = orders.getLastRow() + 1, out = [];
   for (var i = 1; i <= width; i++) out.push('');
@@ -270,7 +298,7 @@ function placeOrder_(o) {
   ol.getRange(start, 1, rowsOut.length, 2).setNumberFormat('@');
   ol.getRange(start, 1, rowsOut.length, 9).setValues(rowsOut);
 
-  return { ok: true, id: id, window: w, subtotal: sub, fee: fee, total: sub + fee, lines: lines };
+  return { ok: true, id: id, token: token, window: w, subtotal: sub, fee: fee, total: sub + fee, lines: lines };
 }
 
 // ---------- bills ----------
