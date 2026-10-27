@@ -12,6 +12,9 @@
     api: 'https://script.google.com/macros/s/AKfycbyYRFQbohQm2STP3hSZB6G3iq2kdop0Vw2XV3BN-cOfQev1-QHH16nxOgc57oWv1r8Y/exec'
   };
 
+  var DELIVERY_APP = window.BLIO_MODE === 'delivery';
+  if (!DELIVERY_APP && location.hash === '#delivery') { location.replace('/delivery/'); return; }
+
   var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var GROUPS = ['Fish', 'Prawns', 'Crabs and clams', 'Dried'];
   var GROUP_MR = { 'Fish': 'मासे', 'Prawns': 'कोळंबी', 'Crabs and clams': 'खेकडे, तिसऱ्या', 'Dried': 'सुकी मासळी' };
@@ -39,7 +42,7 @@
     last: null,
     upi: '', payee: '',
     dpin: store('dpin') || '', deliv: null, dErr: '', dLoading: false, dConfirm: '',
-    installDismissed: !!store('installDismissed')
+    installDismissed: !!store(window.BLIO_MODE === 'delivery' ? 'installDismissedD' : 'installDismissed')
   };
 
   // ---------- order window, always in India time ----------
@@ -172,11 +175,12 @@
   window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferredPrompt = e; if (S.screen === 'home') { render(false); } });
   function installHtml() {
     if (standalone || S.installDismissed) { return ''; }
+    var img = DELIVERY_APP ? '/icons/delivery-192.png' : '/icons/icon-192.png', nm = DELIVERY_APP ? 'Blio Delivery' : 'Blio';
     if (deferredPrompt) {
-      return '<div class="install"><img src="/icons/icon-192.png" alt=""><p><b>Add Blio to your phone</b><br>Opens like an app, no download from a store.</p><button class="go press" data-act="install">Add</button><button class="x" data-act="noinstall" aria-label="Dismiss">×</button></div>';
+      return '<div class="install"><img src="' + img + '" alt=""><p><b>Add ' + nm + ' to your phone</b><br>Opens like an app, no download from a store.</p><button class="go press" data-act="install">Add</button><button class="x" data-act="noinstall" aria-label="Dismiss">×</button></div>';
     }
     if (isIos) {
-      return '<div class="install"><img src="/icons/icon-192.png" alt=""><p><b>Add Blio to your home screen</b><br>Tap Share, then Add to Home Screen.</p><button class="x" data-act="noinstall" aria-label="Dismiss">×</button></div>';
+      return '<div class="install"><img src="' + img + '" alt=""><p><b>Add ' + nm + ' to your home screen</b><br>Tap Share, then Add to Home Screen.</p><button class="x" data-act="noinstall" aria-label="Dismiss">×</button></div>';
     }
     return '';
   }
@@ -436,7 +440,7 @@
         '<div class="fld"><label for="d-pin">Delivery PIN</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN from the admin sheet"></div>' +
         (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
         '<button class="btn big press" data-act="dlogin">Open deliveries</button>' +
-        '<span class="muted-g">For the Blio delivery team only.</span></div>';
+        '<span class="muted-g">For the Blio delivery team only.</span>' + installHtml() + '</div>';
     }
     var list = S.deliv || [];
     var cards = list.map(function (o) {
@@ -461,7 +465,7 @@
       (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are marked Confirmed or Paid in the sheet.</div>' : '') +
       cards +
       '<div class="dfoot"><button class="btn dark press" data-act="dreload">' + (S.dLoading ? 'Refreshing…' : 'Refresh') + '</button>' +
-      '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div></div>';
+      '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div>' + installHtml() + '</div>';
   }
 
   // ---------- payment page ----------
@@ -495,7 +499,7 @@
     else if (S.screen === 'delivery') { main.innerHTML = deliveryHtml(anim); }
     else if (S.screen === 'pay') { main.innerHTML = payHtml(anim); }
     else { main.innerHTML = doneHtml(anim); }
-    back.hidden = S.screen === 'home';
+    back.hidden = S.screen === 'home' || DELIVERY_APP;
     var t = totals();
     bar.innerHTML = '<span class="l"><small>Your slip</small><span class="c" id="cnt">' + t.count + (t.count === 1 ? ' item' : ' items') + '</span></span>' +
       '<span class="s num">' + rs(t.sub) + '</span><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#12272C" stroke-width="2.25" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
@@ -508,6 +512,7 @@
     render(true); main.scrollTop = 0;
   }
   function route() {
+    if (DELIVERY_APP) { return 'delivery'; }
     var h = location.hash;
     if (h === '#slip') { return 'slip'; }
     if (h === '#delivery') { return 'delivery'; }
@@ -567,7 +572,7 @@
         break;
       case 'home': go('home'); break;
       case 'install': if (deferredPrompt) { deferredPrompt.prompt(); deferredPrompt.userChoice.finally(function () { deferredPrompt = null; render(false); }); } break;
-      case 'noinstall': S.installDismissed = true; store('installDismissed', true); render(false); break;
+      case 'noinstall': S.installDismissed = true; store(DELIVERY_APP ? 'installDismissedD' : 'installDismissed', true); render(false); break;
     }
   });
   document.addEventListener('input', function (e) {
@@ -591,6 +596,6 @@
   }, 30000);
 
   enterRoute();
-  loadApi();
+  if (!DELIVERY_APP) { loadApi(); }
   if ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('/sw.js').catch(function () {}); }
 })();
