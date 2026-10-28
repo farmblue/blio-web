@@ -6,6 +6,8 @@
  * GET  ?action=deliveries orders to deliver (needs the delivery PIN)
  * GET  ?action=myorders   status of a customer's own orders (each order needs its secret token)
  * POST order              saves an order after checking stock; prices always come from the sheet
+ * POST action=start       rider starts the round: orders become Out for delivery (needs the delivery PIN)
+ * POST action=next        rider's next stop: that order becomes Arriving next (needs the delivery PIN)
  * POST action=delivered   marks an order Delivered (needs the delivery PIN)
  * Sheet menu Blio > Make bill for selected order   PDF bill in Drive plus a WhatsApp link to send it
  */
@@ -17,14 +19,17 @@ var GROUPS = ['Fish', 'Prawns', 'Crabs and clams', 'Dried'];
 var PACKS = { '500 g': 0.5, '1 kg': 1 };
 var MAX_QTY = 20;
 var ORDER_COLS = ['Order ID', 'Placed at', 'Window', 'Name', 'Mobile', 'Address', 'Area', 'Items', 'Subtotal', 'Delivery',
-  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token'];
+  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token', 'Payment', 'Out at', 'Next at'];
+var STATUSES = ['New', 'Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
+var TO_DELIVER = ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Paid'];   // 'Paid' kept for orders from before the Payment column
 var SETTINGS = [
   ['Current window (filled in automatically)', ''],
   ['Delivery fee (₹)', 40],
   ['Delivery PIN (6 digits)', ''],
   ['UPI ID', ''],
   ['Payee name', 'Farmblue Agrotech Private Limited'],
-  ['FSSAI number', '']
+  ['FSSAI number', ''],
+  ['Delivery person mobile', '']
 ];
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
@@ -56,6 +61,31 @@ function setup_() {
   });
   s.getRange('B2').setNumberFormat('@');
   s.getRange('B4').setNumberFormat('@');
+  s.getRange('B8').setNumberFormat('@');
+}
+function isPaid_(status, payment) { return String(payment).trim() === 'Paid' || String(status).trim() === 'Paid'; }
+function now_() { return Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a'); }
+
+/** Dropdowns for Status and Payment, and moves old "Paid" statuses into the Payment column. Runs when the sheet opens. */
+function tidyOrders_() {
+  var sh = sheet_('Orders'), c = colIndex_(sh), last = sh.getLastRow();
+  var rule = function (list) { return SpreadsheetApp.newDataValidation().requireValueInList(list, true).setAllowInvalid(true).build(); };
+  sh.getRange(2, c['Status'], 3000, 1).setDataValidation(rule(STATUSES));
+  sh.getRange(2, c['Payment'], 3000, 1).setDataValidation(rule(['Unpaid', 'Paid']));
+  if (last < 2) return;
+  var st = sh.getRange(2, c['Status'], last - 1, 1).getValues();
+  var pay = sh.getRange(2, c['Payment'], last - 1, 1).getValues();
+  var ids = sh.getRange(2, c['Order ID'], last - 1, 1).getValues();
+  var changed = false;
+  for (var i = 0; i < st.length; i++) {
+    if (!String(ids[i][0]).trim()) continue;
+    if (String(st[i][0]).trim() === 'Paid') { st[i][0] = 'Confirmed'; pay[i][0] = 'Paid'; changed = true; }
+    if (!String(pay[i][0]).trim()) { pay[i][0] = 'Unpaid'; changed = true; }
+  }
+  if (changed) {
+    sh.getRange(2, c['Status'], last - 1, 1).setValues(st);
+    sh.getRange(2, c['Payment'], last - 1, 1).setValues(pay);
+  }
 }
 function colIndex_(sh) {
   var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0], m = {};
@@ -71,6 +101,7 @@ function setting_(prefix) {
 function onOpen() {
   syncWindow_();
   setup_();
+  tidyOrders_();
   SpreadsheetApp.getUi().createMenu('Blio').addItem('Make bill for selected order', 'makeBill').addToUi();
 }
 
@@ -158,13 +189,13 @@ function deliveries_() {
   var get = function (r, k) { return c[k] ? r[c[k] - 1] : ''; };
   for (var i = 1; i < v.length; i++) {
     var r = v[i], st = String(get(r, 'Status')).trim();
-    if (st !== 'Confirmed' && st !== 'Paid') continue;
+    if (TO_DELIVER.indexOf(st) === -1) continue;
     out.push({
       id: String(get(r, 'Order ID')), window: String(get(r, 'Window')), name: String(get(r, 'Name')),
       mobile: String(get(r, 'Mobile')).replace(/[^0-9]/g, '').slice(-10), address: String(get(r, 'Address')),
       area: String(get(r, 'Area')), items: String(get(r, 'Items')), notes: String(get(r, 'Notes')),
       total: Number(get(r, 'Total')) || 0, final: get(r, 'Final amount') === '' ? '' : Number(get(r, 'Final amount')),
-      status: st, map: String(get(r, 'Map') || '')
+      status: st === 'Paid' ? 'Confirmed' : st, paid: isPaid_(st, get(r, 'Payment')), map: String(get(r, 'Map') || '')
     });
   }
   out.sort(function (a, b) { return (a.area || '').localeCompare(b.area || '') || a.name.localeCompare(b.name); });
@@ -182,6 +213,7 @@ function myOrders_(ids) {
   var sh = sheet_('Orders'), c = colIndex_(sh);
   if (!c['Token']) return [];
   var v = sh.getDataRange().getDisplayValues(), raw = sh.getDataRange().getValues(), out = [], found = {};
+  var rider = String(setting_('Delivery person mobile')).replace(/[^0-9]/g, '').slice(-10);
   var get = function (r, k) { return c[k] ? r[c[k] - 1] : ''; };
   for (var i = 1; i < v.length; i++) {
     var id = String(get(v[i], 'Order ID'));
@@ -190,8 +222,12 @@ function myOrders_(ids) {
     out.push({
       id: id, status: String(get(v[i], 'Status')).trim() || 'New', window: String(get(v[i], 'Window')),
       total: Number(get(raw[i], 'Total')) || 0, final: get(raw[i], 'Final amount') === '' ? '' : Number(get(raw[i], 'Final amount')),
-      bill: String(get(v[i], 'Bill') || ''), deliveredAt: String(get(v[i], 'Delivered at') || '')
+      bill: String(get(v[i], 'Bill') || ''), deliveredAt: String(get(v[i], 'Delivered at') || ''),
+      paid: isPaid_(get(v[i], 'Status'), get(v[i], 'Payment')),
+      outAt: String(get(v[i], 'Out at') || ''), nextAt: String(get(v[i], 'Next at') || ''),
+      rider: ['Out for delivery', 'Arriving next'].indexOf(String(get(v[i], 'Status')).trim()) > -1 ? rider : ''
     });
+    if (out[out.length - 1].status === 'Paid') out[out.length - 1].status = 'Confirmed';
   }
   return out;
 }
@@ -215,7 +251,7 @@ function doPost(e) {
   if (!lock.tryLock(15000)) return json_({ ok: false, error: 'busy' });
   try {
     var o = JSON.parse(e.postData.contents);
-    if (o.action === 'delivered') return json_(markDelivered_(o));
+    if (o.action === 'delivered' || o.action === 'start' || o.action === 'next') return json_(stage_(o));
     return json_(placeOrder_(o));
   } catch (err) {
     return json_({ ok: false, error: 'server' });
@@ -224,19 +260,36 @@ function doPost(e) {
   }
 }
 
-function markDelivered_(o) {
+/** Rider actions from Blio Delivery: start the round, next stop, delivered. */
+function stage_(o) {
   var chk = pinCheck_(o.pin);
   if (chk !== 'ok') return { ok: false, error: chk === 'locked' ? 'locked' : 'pin' };
-  var sh = sheet_('Orders'), c = colIndex_(sh), ids = sh.getRange(2, c['Order ID'], Math.max(1, sh.getLastRow() - 1), 1).getDisplayValues();
+  setup_();
+  var sh = sheet_('Orders'), c = colIndex_(sh), n = Math.max(1, sh.getLastRow() - 1);
+  var ids = sh.getRange(2, c['Order ID'], n, 1).getDisplayValues();
+  var st = sh.getRange(2, c['Status'], n, 1).getValues();
+  var want = o.action === 'start' ? (o.ids || []).slice(0, 60).map(String) : [String(o.id)];
+  var time = now_(), done = 0;
   for (var i = 0; i < ids.length; i++) {
-    if (ids[i][0] === String(o.id)) {
-      var row = i + 2;
+    if (want.indexOf(ids[i][0]) === -1) continue;
+    var row = i + 2, cur = String(st[i][0]).trim();
+    if (cur === 'Paid') { sh.getRange(row, c['Payment']).setValue('Paid'); cur = 'Confirmed'; }
+    if (o.action === 'start') {
+      if (['Confirmed', 'Packed'].indexOf(cur) === -1) continue;
+      sh.getRange(row, c['Status']).setValue('Out for delivery');
+      sh.getRange(row, c['Out at']).setNumberFormat('@').setValue(time);
+    } else if (o.action === 'next') {
+      if (TO_DELIVER.indexOf(cur) === -1) continue;
+      sh.getRange(row, c['Status']).setValue('Arriving next');
+      sh.getRange(row, c['Next at']).setNumberFormat('@').setValue(time);
+      if (!String(sh.getRange(row, c['Out at']).getValue()).trim()) sh.getRange(row, c['Out at']).setNumberFormat('@').setValue(time);
+    } else {
       sh.getRange(row, c['Status']).setValue('Delivered');
-      sh.getRange(row, c['Delivered at']).setNumberFormat('@').setValue(Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a'));
-      return { ok: true };
+      sh.getRange(row, c['Delivered at']).setNumberFormat('@').setValue(time);
     }
+    done++;
   }
-  return { ok: false, error: 'notfound' };
+  return done ? { ok: true, time: time, count: done } : { ok: false, error: 'notfound' };
 }
 
 function placeOrder_(o) {
@@ -281,7 +334,7 @@ function placeOrder_(o) {
 
   var values = {
     'Order ID': id, 'Placed at': placed, 'Window': w, 'Name': name, 'Mobile': phone, 'Address': address, 'Area': area,
-    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub + fee, 'Status': 'New', 'Notes': notes, 'Map': map, 'Token': token
+    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub + fee, 'Status': 'New', 'Notes': notes, 'Map': map, 'Token': token, 'Payment': 'Unpaid'
   };
   var row = orders.getLastRow() + 1, out = [];
   for (var i = 1; i <= width; i++) out.push('');
@@ -352,7 +405,7 @@ function makeBill() {
     '<tr><td class="n">Delivery</td><td class="n">' + inr_(fee) + '</td></tr>' +
     (adjust ? '<tr><td class="n">Adjustment for final cleaned weight</td><td class="n">' + (adjust < 0 ? '-' : '') + inr_(Math.abs(adjust)) + '</td></tr>' : '') +
     '<tr class="big"><td class="n">Amount payable</td><td class="n">' + inr_(payable) + '</td></tr></table>' +
-    '<p style="margin-top:18px">' + (String(get('Status')).trim() === 'Paid' ? '<b>Paid.</b> Thank you.' : (upi ? 'Pay by UPI to <b>' + esc_(upi) + '</b>.' : 'Payment by UPI.')) + '</p>' +
+    '<p style="margin-top:18px">' + (isPaid_(get('Status'), get('Payment')) ? '<b>Paid.</b> Thank you.' : (upi ? 'Pay by UPI to <b>' + esc_(upi) + '</b>.' : 'Payment by UPI.')) + '</p>' +
     '<p class="s">This is not a GST tax invoice. Prices are per kg; fish is weighed after cleaning.</p></body></html>';
 
   var pdf = Utilities.newBlob(html, 'text/html', id + '.html').getAs('application/pdf').setName('Blio bill ' + id + '.pdf');
@@ -362,7 +415,7 @@ function makeBill() {
 
   var payLink = 'https://blio.in/#pay?o=' + encodeURIComponent(id) + '&a=' + Math.round(payable);
   var msg = 'Hello ' + get('Name') + ', thank you for ordering from Blio.\n\nBill for order ' + id + ': ' + rupee_(payable) + '\n' + file.getUrl() +
-    (String(get('Status')).trim() === 'Paid' ? '\n\nPayment received. Thank you!' : (upi ? '\n\nPay by UPI here: ' + payLink : ''));
+    (isPaid_(get('Status'), get('Payment')) ? '\n\nPayment received. Thank you!' : (upi ? '\n\nPay by UPI here: ' + payLink : ''));
   var wa = 'https://wa.me/91' + mobile + '?text=' + encodeURIComponent(msg);
 
   var out = HtmlService.createHtmlOutput(

@@ -188,6 +188,7 @@ a{color:inherit}
 .stack{display:flex;flex-direction:column;gap:20px;padding:8px 16px calc(40px + env(safe-area-inset-bottom))}
 
 .progress{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.progress.p5,.plabels.p5{grid-template-columns:repeat(5,minmax(0,1fr))}
 .progress span{height:8px;background:var(--paper-3)}
 .progress span.on{background:var(--action)}
 .plabels{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;font-size:13px;line-height:1.3;color:var(--muted)}
@@ -262,3 +263,18 @@ a{color:inherit}
 .ostat{font-weight:600}
 .obtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .obtns .btn{flex:1 1 140px;height:46px;font-size:15px}
+
+/* delivery stages */
+.stage{align-self:flex-start;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;background:var(--paper-2);color:var(--ink)}
+.stage.out{background:#2456A6;color:#FFFFFF}
+.stage.next{background:var(--action);color:#FFFFFF}
+.stage.packed{background:#DDE8D3;color:#2E4A1F}
+.dcard.nextcard{outline:3px solid var(--action);outline-offset:-3px}
+.dnote2{font-size:14px;font-weight:600;color:var(--action)}
+.btn.confirmdark{background:var(--paper);color:var(--ink)}
+.ptag{white-space:nowrap;display:inline-block;margin:2px 0 0 8px;font-size:12px;font-weight:700;padding:2px 6px;background:#F3D9CF;color:#7A2A15}
+.ptag.paid{background:#DDE8D3;color:#2E4A1F}
+.ocard.next{outline:3px solid var(--action);outline-offset:-3px}
+.plabels.p5{font-size:11px;gap:4px}
+.plabels.p5 span,.plabels.p5 b{overflow-wrap:normal}
+.obtns .btn.wide{flex-basis:100%}

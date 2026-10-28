@@ -247,14 +247,19 @@
       '<a class="btn big press" href="' + esc(o.url) + '" target="_blank" rel="noopener">Send on WhatsApp</a></div>' +
       '<div class="perf"></div><div style="padding:18px 22px 24px;display:flex;flex-direction:column;gap:12px">' +
       '<span class="note">Delivered ' + esc(o.delivery) + ', 5 to 9 PM</span>' +
-      '<div class="progress"><span class="on"></span><span></span><span></span><span></span></div>' +
-      '<div class="plabels"><b>Placed</b><span>Confirmed</span><span>Cleaned</span><span>Delivered</span></div></div></div>' +
+      progressHtml(0) + '</div></div>' +
       '<button class="btn dark press" data-act="orders">Track this order</button>' +
       '<button class="btn dark press" data-act="home">Back to the catch</button></div>';
   }
 
   // ---------- my orders ----------
-  var STEP_OF = { 'New': 0, 'Confirmed': 1, 'Paid': 2, 'Delivered': 3 };
+  var STEP_OF = { 'New': 0, 'Confirmed': 1, 'Paid': 1, 'Packed': 2, 'Out for delivery': 3, 'Arriving next': 3, 'Delivered': 4 };
+  var STEP_LABELS = ['Placed', 'Accepted', 'Packed', 'On the way', 'Delivered'];
+  function progressHtml(step) {
+    return '<div class="progress p5">' + STEP_LABELS.map(function (l, i) { return '<span' + (i <= step ? ' class="on"' : '') + '></span>'; }).join('') + '</div>' +
+      '<div class="plabels p5">' + STEP_LABELS.map(function (l, i) { return i === step ? '<b>' + l + '</b>' : '<span>' + l + '</span>'; }).join('') + '</div>';
+  }
+  function timeOf(t) { var p = String(t || '').split(', '); return p[1] || p[0] || ''; }
   function loadMyOrders() {
     var withTok = S.myorders.filter(function (o) { return o.token; });
     if (!CONFIG.api || !withTok.length) { return; }
@@ -266,7 +271,11 @@
         S.ordLoading = false;
         if (d.ok) {
           var by = {}; d.orders.forEach(function (x) { by[x.id] = x; });
-          S.myorders.forEach(function (o) { var x = by[o.id]; if (x) { o.status = x.status; o.final = x.final; o.bill = x.bill; o.deliveredAt = x.deliveredAt; o.total = x.total || o.total; } });
+          S.myorders.forEach(function (o) {
+            var x = by[o.id]; if (!x) { return; }
+            o.status = x.status; o.final = x.final; o.bill = x.bill; o.deliveredAt = x.deliveredAt; o.total = x.total || o.total;
+            o.paid = !!x.paid; o.outAt = x.outAt || ''; o.nextAt = x.nextAt || ''; o.rider = x.rider || '';
+          });
           store('myorders', S.myorders);
         } else { S.ordErr = 'Couldn’t check the latest status. Showing what was last seen.'; }
         if (S.screen === 'orders') { keepScroll(); }
@@ -274,26 +283,30 @@
       .catch(function () { S.ordLoading = false; S.ordErr = 'No connection. Showing the status last seen on this phone.'; if (S.screen === 'orders') { keepScroll(); } });
   }
   function orderCard(o) {
-    var st = o.status || 'New', amount = o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total;
+    var st = o.status === 'Paid' ? 'Confirmed' : (o.status || 'New');
+    var paid = o.paid || o.status === 'Paid';
+    var amount = o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total;
     var when = new Date(o.placedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     var text = {
       'New': 'Placed. We confirm it on WhatsApp with the final bill.',
       'Confirmed': 'Confirmed. Your fish is bought and cleaned for ' + (o.delivery || 'delivery') + ' evening.',
-      'Paid': 'Paid. Arriving ' + (o.delivery || 'on delivery day') + ', 5 to 9 PM.',
-      'Delivered': 'Delivered' + (o.deliveredAt ? ' on ' + o.deliveredAt : '') + '.',
+      'Packed': 'Packed and ready. It leaves for delivery soon.',
+      'Out for delivery': 'Out for delivery' + (o.outAt ? ' since ' + timeOf(o.outAt) : '') + '. Arriving between 5 and 9 PM.',
+      'Arriving next': 'You’re next. Arriving in about 15 minutes.',
+      'Delivered': 'Delivered' + (o.deliveredAt ? ' at ' + timeOf(o.deliveredAt) : '') + '.',
       'Cancelled': 'This order was cancelled.'
     }[st] || st;
-    var step = STEP_OF[st], prog = st === 'Cancelled' ? '' :
-      '<div class="progress">' + [0, 1, 2, 3].map(function (i) { return '<span' + (i <= step ? ' class="on"' : '') + '></span>'; }).join('') + '</div>' +
-      '<div class="plabels">' + ['Placed', 'Confirmed', 'Paid', 'Delivered'].map(function (l, i) { return i === step ? '<b>' + l + '</b>' : '<span>' + l + '</span>'; }).join('') + '</div>';
+    var onWay = st === 'Out for delivery' || st === 'Arriving next';
+    var payTag = st === 'New' || st === 'Cancelled' ? '' : (paid ? '<span class="ptag paid">Paid</span>' : '<span class="ptag">Not paid yet</span>');
     var items = (o.lines || []).map(function (l) { return esc(l.name) + ' ' + esc(l.pack) + (l.qty > 1 ? ' x' + l.qty : ''); }).join(', ');
-    var canPay = st === 'Confirmed' && S.upi;
-    return '<div class="ocard' + (st === 'Cancelled' ? ' cancelled' : '') + '">' +
+    var canPay = !paid && S.upi && ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next'].indexOf(st) > -1;
+    return '<div class="ocard' + (st === 'Cancelled' ? ' cancelled' : '') + (st === 'Arriving next' ? ' next' : '') + '">' +
       '<div class="dtop"><b>' + esc(o.id) + '</b><span class="num">' + rs(amount) + '</span></div>' +
-      '<span class="dsub">' + when + (o.day ? ' · ' + esc(o.day) + '’s window' : '') + '</span>' +
+      '<span class="dsub">' + when + (o.day ? ' · ' + esc(o.day) + '’s window' : '') + payTag + '</span>' +
       '<p class="ditems">' + items + '</p>' +
-      '<p class="ostat">' + esc(text) + '</p>' + prog +
+      '<p class="ostat">' + esc(text) + '</p>' + (st === 'Cancelled' ? '' : progressHtml(STEP_OF[st])) +
       '<div class="obtns">' +
+        (onWay && o.rider ? '<a class="btn press wide" href="tel:+91' + esc(o.rider) + '">Call delivery person</a>' : '') +
         (canPay ? '<a class="btn press" href="#pay?o=' + encodeURIComponent(o.id) + '&a=' + Math.round(amount) + '">Pay ' + rs(amount) + '</a>' : '') +
         (o.bill ? '<a class="btn dark" href="' + esc(o.bill) + '" target="_blank" rel="noopener">View bill</a>' : '') +
         '<button class="btn dark press" data-act="reorder" data-id="' + esc(o.id) + '">Order again</button>' +
@@ -503,6 +516,27 @@
       })
       .catch(function () { S.dLoading = false; S.dErr = 'Couldn’t load deliveries. Check your internet connection.'; keepScroll(); });
   }
+  function riderPost(body, onOk, failMsg) {
+    fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ pin: S.dpin }, body)) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { S.dBusy = ''; if (d.ok) { S.dErr = ''; onOk(d); } else { S.dErr = failMsg; } keepScroll(); })
+      .catch(function () { S.dBusy = ''; S.dErr = 'No connection. ' + failMsg; keepScroll(); });
+  }
+  function startDelivery() {
+    var ids = (S.deliv || []).filter(function (o) { return o.status === 'Confirmed' || o.status === 'Packed'; }).map(function (o) { return o.id; });
+    if (!ids.length) { return; }
+    if (!S.dStartConfirm) { S.dStartConfirm = true; keepScroll(); return; }
+    S.dStartConfirm = false; S.dBusy = 'start'; keepScroll();
+    riderPost({ action: 'start', ids: ids }, function () {
+      S.deliv.forEach(function (o) { if (ids.indexOf(o.id) > -1) { o.status = 'Out for delivery'; } });
+    }, 'Couldn’t start the delivery. Try again.');
+  }
+  function nextStop(id) {
+    var o = (S.deliv || []).filter(function (x) { return x.id === id; })[0]; if (!o) { return; }
+    o.saving = true; keepScroll();
+    riderPost({ action: 'next', id: id }, function () { o.saving = false; o.status = 'Arriving next'; }, 'Couldn’t update ' + id + '. Try again.');
+    setTimeout(function () { if (o.saving) { o.saving = false; } }, 20000);
+  }
   function markDelivered(id) {
     if (S.dConfirm !== id) { S.dConfirm = id; keepScroll(); return; }
     S.dConfirm = '';
@@ -517,7 +551,7 @@
       .catch(function () { if (o) { o.saving = false; } S.dErr = 'No connection. ' + id + ' is not marked yet.'; keepScroll(); });
   }
   function deliveryHtml(anim) {
-    var head = '<div class="dhead"><h1 class="anton">Deliveries</h1>';
+    var head = '<div class="dhead"><h1 class="anton">Delivery</h1>';
     if (!S.dpin) {
       return '<div class="stack' + (anim ? ' enter' : '') + '">' + head + '</div>' +
         '<div class="fld"><label for="d-pin">Delivery PIN</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN from the admin sheet"></div>' +
@@ -525,12 +559,21 @@
         '<button class="btn big press" data-act="dlogin">Open deliveries</button>' +
         '<span class="muted-g">For the Blio delivery team only.</span>' + installHtml() + '</div>';
     }
-    var list = S.deliv || [];
+    var RANK = { 'Arriving next': 0, 'Out for delivery': 1, 'Packed': 2, 'Confirmed': 3 };
+    var list = (S.deliv || []).slice().sort(function (a, b) { return (RANK[a.status] || 0) - (RANK[b.status] || 0); });
+    var toStart = list.filter(function (o) { return o.status === 'Confirmed' || o.status === 'Packed'; });
+    var startBtn = toStart.length ? '<button class="btn big press' + (S.dStartConfirm ? ' confirmdark' : '') + '" data-act="dstart"' + (S.dBusy ? ' disabled' : '') + '>' +
+        (S.dBusy === 'start' ? 'Starting…' : S.dStartConfirm ? 'Tap again to start ' + toStart.length + (toStart.length === 1 ? ' order' : ' orders') : 'Start delivery · ' + toStart.length + (toStart.length === 1 ? ' order' : ' orders')) + '</button>' +
+        '<span class="muted-g" style="margin-top:-10px">Customers see that their order is on the way.</span>' : '';
     var cards = list.map(function (o) {
       var amount = o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total;
       var nav = o.map || ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(o.address + ', ' + o.area + ', Kolhapur'));
-      return '<div class="dcard"><div class="dtop"><b>' + esc(o.name) + '</b><span class="amt num' + (o.status === 'Paid' ? ' paid' : '') + '">' +
-          (o.status === 'Paid' ? 'Paid' : 'Collect ' + rs(amount)) + '</span></div>' +
+      var paid = o.paid || o.status === 'Paid';
+      var stageCls = { 'Arriving next': 'next', 'Out for delivery': 'out', 'Packed': 'packed', 'Confirmed': 'conf' }[o.status] || 'conf';
+      var stageTxt = { 'Arriving next': 'Next stop', 'Out for delivery': 'On the way', 'Packed': 'Packed', 'Confirmed': 'Confirmed' }[o.status] || o.status;
+      return '<div class="dcard' + (o.status === 'Arriving next' ? ' nextcard' : '') + '"><span class="stage ' + stageCls + '">' + stageTxt + '</span>' +
+        '<div class="dtop"><b>' + esc(o.name) + '</b><span class="amt num' + (paid ? ' paid' : '') + '">' +
+          (paid ? 'Paid' : 'Collect ' + rs(amount)) + '</span></div>' +
         '<span class="dsub">' + esc(o.id) + (o.area ? ' · ' + esc(o.area) : '') + (o.map ? ' · pinned' : '') + '</span>' +
         '<p>' + esc(o.address) + '</p>' +
         (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
@@ -538,6 +581,8 @@
         '<div class="dbtns"><a class="btn dark" href="tel:+91' + esc(o.mobile) + '">Call</a>' +
         '<a class="btn dark" href="' + esc(nav) + '" target="_blank" rel="noopener">Navigate</a>' +
         '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a></div>' +
+        (o.status === 'Out for delivery' ? '<button class="btn dark press" data-act="dnext" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>Next stop: tell customer</button>' : '') +
+        (o.status === 'Arriving next' ? '<span class="dnote2">Customer has been told you’re next.</span>' : '') +
         '<button class="btn press' + (S.dConfirm === o.id ? ' confirm' : '') + '" data-act="ddone" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>' +
           (o.saving ? 'Saving…' : S.dConfirm === o.id ? 'Tap again to confirm' : 'Mark delivered') + '</button></div>';
     }).join('');
@@ -545,8 +590,8 @@
         '<span class="dcount">' + (S.deliv ? list.length + (list.length === 1 ? ' order to deliver' : ' orders to deliver') : '') + '</span></div>' +
       (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
       (S.dLoading && !S.deliv ? '<div class="box">Loading orders…</div>' : '') +
-      (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are marked Confirmed or Paid in the sheet.</div>' : '') +
-      cards +
+      (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are marked Confirmed or Packed in the sheet.</div>' : '') +
+      startBtn + cards +
       '<div class="dfoot"><button class="btn dark press" data-act="dreload">' + (S.dLoading ? 'Refreshing…' : 'Refresh') + '</button>' +
       '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div>' + installHtml() + '</div>';
   }
@@ -654,7 +699,9 @@
       case 'dlogin': var pin = ($('#d-pin') || {}).value || ''; if (pin.trim()) { S.dpin = pin.trim(); store('dpin', S.dpin); S.deliv = null; loadDeliveries(); } break;
       case 'dlogout': S.dpin = ''; store('dpin', ''); S.deliv = null; S.dErr = ''; keepScroll(); break;
       case 'dreload': S.dConfirm = ''; loadDeliveries(); break;
-      case 'ddone': markDelivered(a.getAttribute('data-id')); break;
+      case 'ddone': S.dStartConfirm = false; markDelivered(a.getAttribute('data-id')); break;
+      case 'dstart': startDelivery(); break;
+      case 'dnext': S.dStartConfirm = false; nextStop(a.getAttribute('data-id')); break;
       case 'copyupi':
         try { navigator.clipboard.writeText(S.upi).then(function () { a.textContent = 'Copied'; }, function () {}); } catch (err) {}
         break;
@@ -675,6 +722,12 @@
     if (e.key === 'Escape' && !mapov.hidden) { closeMap(); }
     if (e.key === 'Enter' && e.target.id === 'd-pin') { var b = $('[data-act=dlogin]'); if (b) { b.click(); } }
   });
+
+  // keep My orders fresh while an order is out for delivery
+  setInterval(function () {
+    if (S.screen !== 'orders' || S.ordLoading || document.hidden) { return; }
+    if (S.myorders.some(function (o) { return ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next'].indexOf(o.status) > -1; })) { loadMyOrders(); }
+  }, 60000);
 
   // countdown
   setInterval(function () {
