@@ -1,6 +1,6 @@
 /* Blio service worker: keeps the app shell available offline, always tries the network first. */
-var CACHE = 'blio-v14';
-var SHELL = ['/', '/index.html', '/app.css?v=14', '/app.js?v=14', '/products.js?v=14', '/manifest.webmanifest',
+var CACHE = 'blio-v15';
+var SHELL = ['/', '/index.html', '/app.css?v=15', '/app.js?v=15', '/products.js?v=15', '/manifest.webmanifest',
   '/icons/wordmark.svg', '/icons/wordmark-dark.svg', '/icons/icon-192.png', '/favicon.ico'];
 
 self.addEventListener('install', function (e) {

@@ -35,12 +35,12 @@
 
   var STAGES = ['New', 'Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
   var STAGE_CLS = { 'New': 'newo', 'Confirmed': 'conf', 'Packed': 'packed', 'Collected': 'packed', 'Out for delivery': 'out', 'Arriving next': 'next', 'Delivered': 'done', 'Cancelled': 'cancel' };
-  var FILTERS = [['open', 'Open'], ['New', 'New'], ['Confirmed', 'Confirmed'], ['Packed', 'Packed'], ['Collected', 'Collected'], ['way', 'On the way'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']];
+  var FILTERS = [['open', 'Open'], ['New', 'New'], ['Confirmed', 'Confirmed'], ['Packed', 'Packed'], ['Collected', 'Collected'], ['way', 'On the way'], ['Delivered', 'Delivered'], ['unpaid', 'Delivered, unpaid'], ['Cancelled', 'Cancelled'], ['all', 'All']];
 
   var S = {
     auth: store('admin') || null,       // { pw, by }
     tab: 'orders', data: null, loading: false, err: '', note: '',
-    filter: 'open', win: '', open: '', busy: {}, bills: {}, warn: '', openLot: '', addOpen: false, editFish: ''
+    filter: 'open', win: '*', open: '', busy: {}, bills: {}, warn: '', openLot: '', addOpen: false, editFish: ''
   };
 
   // ---------- server ----------
@@ -56,14 +56,14 @@
     S.auth = null; store('admin', null); S.data = null; S.err = msg; render();
     return true;
   }
-  function keepView(d) { S.data = d; if (!S.win) { S.win = d.window; } }
+  function keepView(d) { S.data = d; }
   function load(quiet) {
     if (!S.auth || (quiet && S.justGot)) { return; }
     S.loading = true; if (!quiet) { render(); }
     call({ op: 'load' }).then(function (d) {
       S.loading = false;
       if (!d.ok) { if (!authFail(d.error)) { S.err = 'Couldn’t load. Try again.'; } render(); return; }
-      S.data = d; S.err = ''; if (!S.win) { S.win = d.window; }
+      S.data = d; S.err = '';
       render();
     }).catch(function () { S.loading = false; S.err = 'No connection. Check your internet and tap Refresh.'; render(); });
   }
@@ -99,8 +99,9 @@
 
   function filterOrders(list) {
     return list.filter(function (o) {
-      if (S.win && S.win !== '*' && S.filter !== 'open' && o.window !== S.win) { return false; }
+      if (S.win && S.win !== '*' && o.window !== S.win) { return false; }
       if (S.filter === 'open') { return o.status !== 'Delivered' && o.status !== 'Cancelled'; }
+      if (S.filter === 'unpaid') { return o.status === 'Delivered' && !o.paid; }
       if (S.filter === 'way') { return o.status === 'Out for delivery' || o.status === 'Arriving next'; }
       if (S.filter === 'all') { return true; }
       return o.status === S.filter;
@@ -173,14 +174,13 @@
     var wins = []; all.forEach(function (o) { if (o.window && wins.indexOf(o.window) === -1) { wins.push(o.window); } });
     if (S.data.window && wins.indexOf(S.data.window) === -1) { wins.unshift(S.data.window); }
     wins.sort().reverse();
-    var inWin = all.filter(function (o) { return S.win === '*' || o.window === S.win; });
-    var count = function (f) { var keep = S.filter; S.filter = f; var n = filterOrders(f === 'open' ? all : inWin).length; S.filter = keep; return n; };
+    var count = function (f) { var keep = S.filter; S.filter = f; var n = filterOrders(all).length; S.filter = keep; return n; };
     var list = filterOrders(all);
     return '<div class="stack">' +
       '<div class="dhead"><h1 class="anton">Orders</h1><button class="linkbtn" data-act="refresh">' + (S.loading ? 'Refreshing…' : 'Refresh') + '</button></div>' +
-      (S.filter !== 'open' ? '<div class="chiprow" role="group" aria-label="Delivery day">' + wins.map(function (w) {
+      ('<div class="chiprow" role="group" aria-label="Delivery day">' + wins.map(function (w) {
         return '<button class="chip" data-act="win" data-v="' + esc(w) + '" aria-pressed="' + (S.win === w) + '">' + esc(winLabel(w)) + (w === S.data.window ? ' · next' : '') + '</button>';
-      }).join('') + '<button class="chip" data-act="win" data-v="*" aria-pressed="' + (S.win === '*') + '">All days</button></div>' : '') +
+      }).join('') + '<button class="chip" data-act="win" data-v="*" aria-pressed="' + (S.win === '*') + '">All days</button></div>') +
       '<div class="chiprow" role="group" aria-label="Stage">' + FILTERS.map(function (f) {
         return '<button class="chip" data-act="filter" data-v="' + f[0] + '" aria-pressed="' + (S.filter === f[0]) + '">' + f[1] + ' <span class="cnt">' + count(f[0]) + '</span></button>';
       }).join('') + '</div>' + cashHtml(all) +
@@ -405,6 +405,7 @@
     }
     main.innerHTML = ({ orders: ordersHtml, stock: stockHtml, fish: fishHtml, settings: settingsHtml }[S.tab] || ordersHtml)();
     main.scrollTop = keepY;
+    main.querySelectorAll('.chiprow').forEach(function (r) { var on = r.querySelector('[aria-pressed=true]'); if (on && (on.offsetLeft + on.offsetWidth > r.scrollLeft + r.clientWidth || on.offsetLeft < r.scrollLeft)) { r.scrollLeft = on.offsetLeft - 16; } });
     if (focus && document.getElementById(focus)) { document.getElementById(focus).focus(); }
   }
   function goTab(t) { S.tab = t; S.note = ''; S.warn = ''; S.err = ''; render(); main.scrollTop = 0; }
@@ -421,7 +422,7 @@
       case 'lock': S.auth = null; store('admin', null); S.data = null; S.err = ''; render(); break;
       case 'tab': goTab(v); break;
       case 'refresh': S.note = ''; load(); break;
-      case 'filter': S.filter = v; S.note = ''; if (v !== 'open' && !S.win) { S.win = S.data.window; } render(); break;
+      case 'filter': S.filter = v; S.note = ''; render(); break;
       case 'win': S.win = v; render(); break;
       case 'toggle': S.open = S.open === id ? '' : id; S.note = ''; render(); break;
       case 'stage': setOrder(id, { status: v }, v === 'Cancelled' ? 'cancelled' : 'now ' + v); break;
