@@ -781,6 +781,12 @@
       S.deliv.forEach(function (o) { if (ids.indexOf(o.id) > -1) { o.status = 'Out for delivery'; } });
     }, 'Couldn’t start the delivery. Try again.');
   }
+  function riderMsg(o, paid, amount) {
+    var first = String(o.name || '').split(' ')[0];
+    if (o.status === 'Arriving next') { return 'Hello ' + first + ', this is Blio delivery. I am about 15 minutes away with your order ' + o.id + '.' + (paid ? '' : ' Amount to pay: ' + rs(amount) + ', cash or UPI.'); }
+    if (o.status === 'Out for delivery') { return 'Hello ' + first + ', your Blio order ' + o.id + ' is on the way. I will message again when I am close.'; }
+    return '';
+  }
   function collect(id, undo) {
     var o = (S.deliv || []).filter(function (x) { return x.id === id; })[0]; if (!o) { return; }
     o.saving = true; keepScroll();
@@ -896,9 +902,9 @@
         '<p class="ditems">' + esc(o.items) + '</p>' +
         '<div class="dbtns"><a class="btn dark" href="tel:+91' + esc(o.mobile) + '">Call</a>' +
         '<a class="btn dark" href="' + esc(nav) + '" target="_blank" rel="noopener">Navigate</a>' +
-        '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a></div>' +
+        '<a class="btn ' + (riderMsg(o, paid, amount) ? 'press' : 'dark') + '" href="https://wa.me/91' + esc(o.mobile) + (riderMsg(o, paid, amount) ? '?text=' + encodeURIComponent(riderMsg(o, paid, amount)) : '') + '" target="_blank" rel="noopener">' + (o.status === 'Arriving next' ? 'Send: 15 min away' : o.status === 'Out for delivery' ? 'Send: on the way' : 'WhatsApp') + '</a></div>' +
         (o.status === 'Out for delivery' ? '<button class="btn dark press" data-act="dnext" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>Next stop: tell customer</button>' : '') +
-        (o.status === 'Arriving next' ? '<span class="dnote2">Customer has been told you’re next.</span>' : '') +
+        (o.status === 'Arriving next' ? '<span class="dnote2">Their Blio app now shows you’re next. Tap Send: 15 min away so they get it on WhatsApp too.</span>' : '') +
         (o.status === 'Packed' ? '<button class="btn press" data-act="dcollect" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>' + (o.saving ? 'Saving…' : 'Collected from packing') + '</button>' : '') +
         (o.status === 'Collected' ? '<button class="linkbtn dk" data-act="duncollect" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>Not collected (undo)</button>' : '') +
         doneBtns + '</div>';

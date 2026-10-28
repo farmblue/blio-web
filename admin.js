@@ -75,6 +75,30 @@
       render();
     }).catch(function () { delete S.busy[key]; S.err = 'No connection. ' + failMsg; render(); });
   }
+  /** The WhatsApp update for the stage the order is at, or '' where the customer needs no message (packing is internal). */
+  function custMsg(o) {
+    var st = S.data && S.data.settings || {}, first = String(o.name || '').split(' ')[0];
+    var amount = o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total;
+    var hm = function (t) { var m = String(t || '').match(/^(\d{1,2}):(\d{2})$/); if (!m) { return ''; } var h = +m[1]; return (h % 12 || 12) + (+m[2] ? ':' + m[2] : '') + (h >= 12 ? ' PM' : ' AM'); };
+    var a = hm(st.start), b = hm(st.end), slot = a && b ? (a.slice(-2) === b.slice(-2) ? a.slice(0, -3) : a) + ' to ' + b : '';
+    var hi = 'Hello ' + first + ', ';
+    if (o.status === 'Confirmed') {
+      var payNow = o.payBy === 'Now (UPI)' && !o.paid && st.upi;
+      return hi + 'your Blio order ' + o.id + ' is confirmed. Total ' + rs(amount) + '. Delivery ' + winLabel(o.window) + (slot ? ', ' + slot : '') + '.' +
+        (payNow ? '\n\nPay by UPI here: https://blio.in/#pay?o=' + encodeURIComponent(o.id) + '&a=' + Math.round(amount) : (o.paid ? '' : '\n\nYou can pay at delivery, by cash or UPI.')) +
+        '\n\nTrack your order: https://blio.in/#orders';
+    }
+    if (o.status === 'Out for delivery') {
+      return hi + 'your Blio order ' + o.id + ' is out for delivery and reaches you ' + (slot ? 'by ' + b : 'this evening') + '.' + (o.paid ? '' : ' Amount to pay: ' + rs(amount) + ', cash or UPI.');
+    }
+    if (o.status === 'Delivered') {
+      return hi + 'your Blio order ' + o.id + ' has been delivered. Thank you for ordering from Blio! If anything was not right, just reply here.';
+    }
+    if (o.status === 'Cancelled') {
+      return hi + 'sorry, your Blio order ' + o.id + ' has been cancelled. ' + (o.paid ? 'Your payment will be refunded. ' : '') + 'Please reply here if you have any questions.';
+    }
+    return '';
+  }
   function order(id) { return (S.data && S.data.orders || []).filter(function (o) { return o.id === id; })[0]; }
   function setOrder(id, change, label) {
     var o = order(id); if (!o) { return; }
@@ -82,7 +106,8 @@
       if (change.status !== undefined) { o.status = change.status; }
       if (change.payment !== undefined) { o.paid = change.payment === 'Paid'; }
       if (change.final !== undefined) { o.final = change.final === '' ? '' : Number(change.final); }
-      S.note = id + ': ' + label;
+      S.note = id + ': ' + label + (change.status !== undefined && custMsg(o) ? '. Tap Send update to tell the customer on WhatsApp.' : '');
+      if (change.status !== undefined && custMsg(o)) { S.open = id; }
     }, 'Couldn’t update ' + id + '. Try again.');
   }
 
@@ -138,7 +163,7 @@
         (o.coupon ? ' · coupon ' + esc(o.coupon) + ' −' + rs(o.discount) : '') + (o.packedBy ? ' · packed by ' + esc(o.packedBy) : '') +
         (o.collected ? ' · collected at the door: ' + esc(o.collected.split(' ')[0]) + ' ' + rs(o.collected.split(' ')[1]) : '') + '</p>' +
       '<div class="dbtns"><a class="btn dark" href="tel:+91' + esc(o.mobile) + '">Call</a>' +
-      '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a>' +
+      '<a class="btn ' + (custMsg(o) ? 'press' : 'dark') + '" href="https://wa.me/91' + esc(o.mobile) + (custMsg(o) ? '?text=' + encodeURIComponent(custMsg(o)) : '') + '" target="_blank" rel="noopener">' + (custMsg(o) ? 'Send update' : 'WhatsApp') + '</a>' +
       '<a class="btn dark" href="' + esc(nav) + '" target="_blank" rel="noopener">Map</a></div>' +
       (acts ? '<div class="arow">' + acts + '</div>' : '') +
       '<div class="arow"><button class="btn dark press" data-act="pay" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>' + (o.paid ? 'Mark unpaid' : 'Mark paid') + '</button>' +
