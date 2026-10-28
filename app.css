@@ -424,3 +424,7 @@ s.was{font-weight:500;opacity:.55;margin-right:6px}
 }
 .fnote{margin-top:6px;padding:10px 12px;background:var(--paper-2);font-size:14px;line-height:1.45;color:var(--ink)}
 textarea.anote{height:auto;min-height:72px;padding:10px 14px;font-family:inherit;line-height:1.4;resize:vertical}
+/* The outer frame must never scroll: if it does, the hidden item panel below it slides into view ("double screen") */
+.app{overflow:clip}
+.sheet:not(.show):not(.dragging){visibility:hidden;transition:transform 480ms var(--sheet),visibility 0s linear 480ms}
+.sheet.show{visibility:visible}

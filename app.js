@@ -21,6 +21,7 @@
   var MSHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
+  (function () { var ap = document.getElementById('app'); if (ap) { ap.addEventListener('scroll', function () { if (ap.scrollTop || ap.scrollLeft) { ap.scrollTop = 0; ap.scrollLeft = 0; } }); } })();
   var main = $('#main'), sheetEl = $('#sheet'), scrim = $('#scrim'), bar = $('#slipbar'), back = $('#back');
 
   function store(k, v) { try { if (v === undefined) { return JSON.parse(localStorage.getItem('blio.' + k)); } localStorage.setItem('blio.' + k, JSON.stringify(v)); } catch (e) { return null; } }
@@ -145,16 +146,23 @@
   function lineKey(p, o, pack, cut) { return p.id + '|' + o.key + '|' + pack + '|' + cut; }
   // Re-price the slip against the latest catch. Sizes that sold out or ended are taken off with a note.
   function syncCart() {
-    var dropped = [], byKey = {};
+    var dropped = [], byKey = {}, recut = [];
     S.cart = S.cart.filter(function (l) {
       var p = S.products.filter(function (x) { return x.name === l.name; })[0];
       var o = p && (optOf(p, l.opt) || p.options.filter(function (x) { return x.size === (l.size || ''); })[0]);
       if (!o) { dropped.push(l.name + (l.size ? ' (' + l.size + ')' : '')); return false; }
+      if (p.cuts && p.cuts.length && p.cuts.indexOf(l.cut) === -1) {
+        // a cut that no longer exists: take the closest one ("Cleaned and deveined" becomes "Cleaned")
+        var w = String(l.cut || '').toLowerCase().split(' ')[0];
+        var near = p.cuts.filter(function (c) { return c.toLowerCase().indexOf(w) === 0; })[0] || p.cuts[0];
+        recut.push(l.name + ': cut changed to ' + near); l.cut = near;
+      }
       l.id = p.id; l.opt = o.key; l.size = o.size; l.price = o.price; l.off = o.off || 0; l.base = o.base || o.price; l.key = lineKey(p, o, l.pack, l.cut);
       if (byKey[l.key]) { byKey[l.key].qty += l.qty; return false; }
       byKey[l.key] = l; return true;
     });
     if (dropped.length) { S.short = (S.short ? S.short + ' ' : '') + 'No longer available, so taken off your slip: ' + dropped.join(', ') + '.'; }
+    if (recut.length) { S.short = (S.short ? S.short + ' ' : '') + recut.join('. ') + ', as the earlier cut is no longer offered.'; }
     saveCart();
   }
   function whereWhen(o) {
@@ -186,6 +194,15 @@
       .then(function (r) { return r.json(); })
       .then(function (d) { S.billBusy = ''; if (d.ok) { S.billFiles[id] = b64File(d.b64, d.name); } else { S.ordErr = 'The bill for ' + id + ' isn’t ready yet. Ask us on WhatsApp.'; } keepScroll(); })
       .catch(function () { S.billBusy = ''; S.ordErr = 'No connection. Couldn’t get the bill.'; keepScroll(); });
+  }
+  function offerNames() {
+    var n = []; S.cart.forEach(function (l) { if (l.off && n.indexOf(l.name) === -1) { n.push(l.name); } }); return n;
+  }
+  function offerHint() {
+    var n = offerNames();
+    if (!n.length) { return 'Coupons don’t apply to items already on offer.'; }
+    var list = n.length === 1 ? n[0] : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1];
+    return list + (n.length === 1 ? ' is' : ' are') + ' already on offer, so coupons don’t apply to ' + (n.length === 1 ? 'it.' : 'them.');
   }
   function payNow() { return S.form.payBy === 'now' && !!S.upi; }
   function payChoiceHtml() {
@@ -396,7 +413,7 @@
         '<div class="hd"><h1 class="anton">Your slip</h1><span>Delivered ' + esc(w.delivery) + ', ' + range() + '</span></div>' +
         '<div class="lines">' + lines + '</div><div class="perf" style="margin:4px 22px 0"></div>' +
         '<div class="sums"><div><span>Subtotal</span><span class="num">' + rs(t.sub) + '</span></div>' +
-        (t.disc ? '<div class="m"><span>Coupon ' + esc(S.coupon.code) + '</span><span class="num">−' + rs(t.disc) + '</span></div>' : '') +
+        (t.disc ? '<div class="m"><span>Coupon ' + esc(S.coupon.code) + (offerNames().length ? ' (not on offer items)' : '') + '</span><span class="num">−' + rs(t.disc) + '</span></div>' : '') +
         '<div class="m"><span>Delivery</span><span class="num">' + (t.fee ? rs(t.fee) : 'Free') + '</span></div>' +
         '<div class="t"><span>Estimated total</span><b class="num">' + rs(t.total) + '</b></div>' +
         '<span class="note">Packs are weighed whole, before cleaning. Fish don’t come in exact weights, so we confirm the final bill on WhatsApp before you pay.</span></div>' +
@@ -423,7 +440,8 @@
         : '<div class="fld"><label for="f-coupon">Coupon code (optional)</label><div class="crow2"><input id="f-coupon" autocapitalize="characters" autocomplete="off" placeholder="Enter code" value="' + esc(S.cDraft || '') + '">' +
           '<button class="btn dark press" data-act="capply"' + (S.cChecking ? ' disabled' : '') + '>' + (S.cChecking ? 'Checking…' : 'Apply') + '</button></div>' +
           (S.cErr ? '<span class="err">' + esc(S.cErr) + '</span>' : '') +
-          '<span class="hint">Coupons don’t apply to items already on offer.</span></div>') +
+          '<span class="hint">' + offerHint() + '</span></div>') +
+      (S.coupon && offerNames().length ? '<span class="hint" style="margin-top:-10px">' + offerHint() + '</span>' : '') +
       payChoiceHtml() +
       (S.short ? '<div class="box warn" role="alert">' + esc(S.short) + '</div>' : '') +
       (e.server ? '<div class="box warn" role="alert">We couldn’t place the order. Check your internet connection and try again.</div>' : '') +
