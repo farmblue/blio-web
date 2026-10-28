@@ -39,7 +39,7 @@
     short: null,
     live: false,
     cats: CATS.slice(), plan: null, pending: false, apiAt: 0, coupon: null, cErr: '', cDraft: '', billFiles: {}, billBusy: '',
-    roles: null, pack: null, dTab: '', packBy: store('packBy') || '', pConfirm: '',
+    roles: null, pack: null, loginRole: store('staffRole') || 'delivery', dTab: store('staffRole') || 'delivery', packBy: store('packBy') || '', pConfirm: '',
     errors: {},
     last: null,
     upi: '', payee: '',
@@ -723,7 +723,12 @@
         S.dLoading = false;
         if (d.ok) {
           S.roles = d.roles || ['delivery']; S.deliv = d.orders || null; S.pack = d.pack || null;
-          if (S.roles.indexOf(S.dTab) === -1) { S.dTab = S.roles[0]; }
+          S.dTab = S.loginRole;
+          if (S.roles.indexOf(S.loginRole) === -1) {
+            var other = S.loginRole === 'packing' ? 'delivery' : 'packing';
+            S.dErr = 'That PIN is for ' + other + ', not ' + S.loginRole + '. Choose ' + (other === 'packing' ? 'Packing' : 'Delivery') + ' or use the ' + S.loginRole + ' PIN.';
+            S.dpin = ''; store('dpin', ''); S.deliv = null; S.pack = null; S.roles = null;
+          }
         }
         else if (d.error === 'locked') { S.dErr = 'Too many wrong PINs. Wait 10 minutes and try again.'; S.dpin = ''; store('dpin', ''); }
         else { S.dErr = 'That PIN didn’t work. Ask for the Delivery or Packing PIN set in Blio Admin.'; S.dpin = ''; store('dpin', ''); S.deliv = null; S.pack = null; }
@@ -772,12 +777,7 @@
       })
       .catch(function () { if (o) { o.saving = false; } S.dErr = 'No connection. ' + id + ' is not marked yet.'; keepScroll(); });
   }
-  function roleTabs() {
-    if (!S.roles || S.roles.length < 2) { return ''; }
-    return '<div class="chiprow" role="group" aria-label="Work">' + S.roles.map(function (r) {
-      return '<button class="chip" data-act="dtab" data-v="' + r + '" aria-pressed="' + (S.dTab === r) + '">' + (r === 'packing' ? 'Packing' : 'Delivery') + '</button>';
-    }).join('') + '</div>';
-  }
+  function roleTabs() { return ''; }   // the job (delivery or packing) is chosen at login
   function packAct(action, id) {
     if (action === 'packed' && S.pConfirm !== id) { S.pConfirm = id; keepScroll(); return; }
     S.pConfirm = ''; S.pBusy = id; S.dErr = ''; keepScroll();
@@ -794,7 +794,8 @@
     if (!S.packBy) {
       return '<div class="stack' + (anim ? ' enter' : '') + '">' + head +
         '<div class="fld"><label for="p-by">Your name</label><input id="p-by" autocomplete="name" placeholder="Shown next to the orders you pack"></div>' +
-        '<button class="btn big press" data-act="pbyok">Continue</button></div>';
+        '<button class="btn big press" data-act="pbyok">Continue</button>' +
+        '<button class="linkbtn light" data-act="dlogout">Log out or switch job</button></div>';
     }
     var lineTxt = function (x) { return esc(x.item) + (x.size ? ' (' + esc(x.size.toLowerCase()) + ')' : '') + ', ' + esc(x.pack) + (x.qty > 1 ? ' x' + x.qty : '') + ', ' + esc(x.cut); };
     return '<div class="stack' + (anim ? ' enter' : '') + '">' + head +
@@ -820,15 +821,19 @@
       }).join('') +
       '<div class="dfoot"><button class="btn dark press" data-act="dreload">' + (S.dLoading ? 'Refreshing…' : 'Refresh') + '</button>' +
       '<button class="linkbtn light" data-act="pbychange">Not ' + esc(S.packBy) + '?</button>' +
-      '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div>' + installHtml() + '</div>';
+      '<button class="linkbtn light" data-act="dlogout">Log out or switch job</button></div>' + installHtml() + '</div>';
   }
   function deliveryHtml(anim) {
     var head = '<div class="dhead"><h1 class="anton">Delivery</h1>';
     if (!S.dpin) {
       return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="dhead"><h1 class="anton">Blio team</h1></div>' +
-        '<div class="fld"><label for="d-pin">Staff PIN</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Delivery or packing PIN"></div>' +
+        '<div class="fld"><span class="lab" style="font-size:16px">I am doing</span>' +
+          '<div class="seg dark" data-on="' + (S.loginRole === 'packing' ? 1 : 0) + '"><span class="ind"></span>' +
+          '<button data-act="lrole" data-v="delivery" aria-pressed="' + (S.loginRole !== 'packing') + '">Delivery</button>' +
+          '<button data-act="lrole" data-v="packing" aria-pressed="' + (S.loginRole === 'packing') + '">Packing</button></div></div>' +
+        '<div class="fld"><label for="d-pin">' + (S.loginRole === 'packing' ? 'Packing PIN' : 'Delivery PIN') + '</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN from Blio Admin"></div>' +
         (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
-        '<button class="btn big press" data-act="dlogin">Open</button>' +
+        '<button class="btn big press" data-act="dlogin">' + (S.loginRole === 'packing' ? 'Open packing' : 'Open deliveries') + '</button>' +
         '<span class="muted-g">For the Blio team only.</span>' + installHtml() + '</div>';
     }
     if (S.dTab === 'packing') { return packingHtml(anim); }
@@ -875,7 +880,7 @@
       (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are confirmed in Admin.</div>' : '') +
       startBtn + cards +
       '<div class="dfoot"><button class="btn dark press" data-act="dreload">' + (S.dLoading ? 'Refreshing…' : 'Refresh') + '</button>' +
-      '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div>' + installHtml() + '</div>';
+      '<button class="linkbtn light" data-act="dlogout">Log out or switch job</button></div>' + installHtml() + '</div>';
   }
 
   // ---------- payment page ----------
@@ -994,8 +999,9 @@
       case 'mapclose': closeMap(); break;
       case 'locate': locate(); break;
       case 'mapok': confirmMap(); break;
+      case 'lrole': S.loginRole = v; store('staffRole', v); S.dErr = ''; var pv = ($('#d-pin') || {}).value || ''; keepScroll(); var pi = $('#d-pin'); if (pi) { pi.value = pv; } break;
       case 'dlogin': var pin = ($('#d-pin') || {}).value || ''; if (pin.trim()) { S.dpin = pin.trim(); store('dpin', S.dpin); S.deliv = null; loadDeliveries(); } break;
-      case 'dlogout': S.dpin = ''; store('dpin', ''); S.deliv = null; S.dErr = ''; keepScroll(); break;
+      case 'dlogout': S.dpin = ''; store('dpin', ''); S.deliv = null; S.pack = null; S.roles = null; S.dErr = ''; keepScroll(); break;
       case 'dreload': S.dConfirm = ''; loadDeliveries(); break;
       case 'ddone': S.dStartConfirm = false; markDelivered(a.getAttribute('data-id'), v || ''); break;
       case 'dcollect': collect(a.getAttribute('data-id'), false); break;
