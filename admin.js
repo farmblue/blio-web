@@ -214,12 +214,15 @@
     var open = S.openLot === l.lot, busy = !!S.busy[l.lot];
     var tag = { Draft: 'newo', Live: 'conf', Ended: 'done', Closed: 'cancel' }[l.stage] || 'conf';
     var margin = l.cost !== '' && l.cost !== null && Number(l.cost) > 0 ? Math.round((l.price - l.cost) / l.price * 100) : null;
+    var offPrice = l.offer ? Math.round(l.price * (1 - l.offer / 100)) : l.price;
+    var offMargin = margin !== null && l.offer ? Math.round((offPrice - l.cost) / offPrice * 100) : null, offLoss = offMargin !== null && offPrice < Number(l.cost);
     var head = '<button class="aorder-head" data-act="lot" data-id="' + esc(l.lot) + '" aria-expanded="' + open + '">' +
       '<span class="ah1"><b>' + esc(l.fish) + (l.size ? ' · ' + esc(l.size.toLowerCase()) : '') + '</b><span class="num">' + rs(l.price) + '/kg</span></span>' +
       '<span class="ah2">' + esc(l.landedLabel) + (l.harbour ? ' · ' + esc(l.harbour) : '') + ' · ' + esc(l.lot) + '</span>' +
       '<span class="ah2 num">Bought ' + kg(l.kg) + (l.pieces !== '' && l.pieces !== null ? ' (' + l.pieces + ' fish)' : '') + ' · sold ' + kg(l.sold) + ' · <b>left ' + kg(l.left) + '</b></span>' +
       '<span class="ah3"><span class="stage ' + tag + '">' + esc(l.stage === 'Draft' ? 'Waiting to go live' : l.stage === 'Ended' ? 'Selling ended' : l.stage) + '</span>' +
-        (margin !== null ? '<span class="ptag">Cost ' + rs(l.cost) + ' · ' + margin + '% margin</span>' : '') +
+        (margin !== null ? '<span class="ptag' + (offLoss ? ' loss' : '') + '">Cost ' + rs(l.cost) + ' · ' + margin + '% margin' +
+          (l.offer ? ' · ' + (offLoss ? 'below cost at offer' : offMargin + '% at offer') : '') + '</span>' : '') +
         (l.offer ? '<span class="ptag offer">Offer ' + l.offer + '%</span>' : '') + '</span></button>';
     if (!open) { return '<div class="aorder">' + head + '</div>'; }
     var gapTol = Math.max(0.3, l.expected * 0.02);
@@ -477,6 +480,8 @@
         var eg = main.querySelector('.agrid[data-lot="' + id + '"]'), lp = eg.querySelector('[data-f=price]').value.trim(), lk = eg.querySelector('[data-f=kg]').value.trim(), lpc = eg.querySelector('[data-f=pieces]').value.trim(), lo = eg.querySelector('[data-f=offer]').value.trim();
         if (!(Number(lp) > 0) || !(Number(lk) > 0)) { S.err = 'Price and kg must be more than 0.'; render(); return; }
         if (lo !== '' && !(Number(lo) >= 0 && Number(lo) <= 90)) { S.err = 'The offer must be between 0 and 90%.'; render(); return; }
+        var lcost = Number(((S.data.lots || []).filter(function (x) { return x.lot === id; })[0] || {}).cost) || 0, lop = Math.round(Number(lp) * (1 - (Number(lo) || 0) / 100));
+        S.warn = lcost && lop < lcost ? 'Note: at this offer the price (' + rs(lop) + '/kg) is below the cost (' + rs(lcost) + '/kg).' : '';
         act(id, { op: 'lotedit', lot: id, price: Number(lp), kg: Number(lk), pieces: lpc === '' ? '' : Number(lpc), offer: lo === '' ? 0 : Math.round(Number(lo)) }, function () {
           S.note = id + ' saved.' + (Number(lo) > 0 ? ' It shows in Today’s offers at ' + Math.round(Number(lo)) + '% off.' : ''); load(true); }, 'Couldn’t save ' + id + '.');
         break;
