@@ -305,6 +305,7 @@
         '<label><span>Left after cleaning (%)</span><input class="ainput num" id="f-yield" type="number" inputmode="numeric" min="0" max="100" value="' + esc(f.yieldPct || '') + '" placeholder="Optional, like 70"></label></div>' +
       '<label class="afl"><span>Comes from</span><input class="ainput" id="f-from" value="' + esc(f.from) + '" placeholder="the Konkan coast"></label>' +
       '<label class="afl"><span>Cuts, separated by commas</span><input class="ainput" id="f-cuts" value="' + esc((f.cuts || ['Whole', 'Curry cut']).join(', ')) + '"></label>' +
+      '<label class="afl"><span>Note for customers (optional, shown on this fish)</span><textarea class="ainput anote" id="f-note" maxlength="200" placeholder="For example: Want them deveined? Mention it in Notes. We do it if time allows, but can’t promise it.">' + esc(f.note || '') + '</textarea></label>' +
       '<label class="acheck"><input type="checkbox" id="f-show"' + (f.show === false ? '' : ' checked') + '> Show in the shop when there is a catch</label>' +
       '<label class="acheck"><input type="checkbox" id="f-left"' + (f.showLeft === false ? '' : ' checked') + '> Show customers how many kg are left</label>' +
       '<label class="acheck"><input type="checkbox" id="f-origin"' + (f.showOrigin === false ? '' : ' checked') + '> Show customers where it was landed</label>' +
@@ -524,7 +525,7 @@
         if (!v && (S.data.fish || []).some(function (x) { return x.name.toLowerCase() === fname.toLowerCase(); })) { S.err = fname + ' is already in the list. Tap Edit on it instead.'; render(); return; }
         var yv = $('#f-yield').value.trim(), pv = Number($('#f-price').value);
         var fb = { op: 'fish', name: fname, group: $('#f-group').value, en: $('#f-en').value.trim(), mr: $('#f-mr').value.trim(), from: $('#f-from').value.trim(),
-          cuts: $('#f-cuts').value.split(',').map(function (x) { return x.trim(); }).filter(Boolean), yieldPct: yv === '' ? '' : Number(yv), show: $('#f-show').checked, showLeft: $('#f-left').checked, showOrigin: $('#f-origin').checked };
+          cuts: $('#f-cuts').value.split(',').map(function (x) { return x.trim(); }).filter(Boolean), yieldPct: yv === '' ? '' : Number(yv), note: $('#f-note').value.trim(), show: $('#f-show').checked, showLeft: $('#f-left').checked, showOrigin: $('#f-origin').checked };
         if (pv > 0) { fb.price = pv; }
         act('fish', fb, function () { S.note = fname + ' saved.'; S.editFish = ''; load(true); }, 'Couldn’t save ' + fname + '.');
         break;
@@ -578,4 +579,19 @@
   render();
   if (S.auth) { load(); }
   if ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('/sw.js').catch(function () {}); }
+})();
+
+/* Mouse wheel scrolls sideways rows (offers, Boat to door, admin chips) on computers. Phones and trackpads are untouched. */
+(function () {
+  var last = 0;
+  document.addEventListener('wheel', function (e) {
+    var r = e.target.closest && e.target.closest('.orail, .rail, .chiprow');
+    if (!r || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) { return; }
+    var max = r.scrollWidth - r.clientWidth; if (max <= 2) { return; }
+    var dir = e.deltaY > 0 ? 1 : -1;
+    if ((dir > 0 && r.scrollLeft >= max - 2) || (dir < 0 && r.scrollLeft <= 2)) { return; }
+    e.preventDefault();
+    var now = Date.now(); if (now - last < 250) { return; } last = now;
+    r.scrollBy({ left: dir * Math.max(160, r.clientWidth * 0.6), behavior: 'smooth' });
+  }, { passive: false });
 })();

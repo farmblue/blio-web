@@ -50,7 +50,7 @@ var SETTINGS = [
   ['Harbours (separated by commas)', 'Goa, Vengurla, Malvan, Devgad, Ratnagiri'],
   ['Packing PIN (4 to 8 digits)', '']
 ];
-var SETUP_VERSION = '2026-10-28d';   // change this when setup_ adds new tabs, columns or settings
+var SETUP_VERSION = '2026-10-28e';   // change this when setup_ adds new tabs, columns or settings
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
   address: 'House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra',
@@ -96,7 +96,7 @@ function tab_(name, cols, seed) {
 function setup_() {
   ensureHeaders_(sheet_('Orders'), ORDER_COLS);
   ensureHeaders_(sheet_('Order lines'), ['Order ID', 'Window', 'Item', 'Pack', 'Cut', 'Qty', 'Kg', 'Line total', 'Status', 'Lot', 'Size', 'List price', 'Off %']);
-  ensureHeaders_(sheet_('Products'), ['Yield %', 'Show kg left', 'Show origin']);
+  ensureHeaders_(sheet_('Products'), ['Yield %', 'Show kg left', 'Show origin', 'Note for customers']);
   tab_('Stock', STOCK_COLS);
   tab_('Counts', COUNT_COLS);
   tab_('Categories', CAT_COLS, CAT_SEED);
@@ -270,7 +270,8 @@ function catalog_() {
     return { name: String(p['name']).trim(), en: String(p['english name'] || ''), mr: String(p['marathi name'] || ''), group: String(p['group'] || 'Fish').trim(),
       from: String(p['from'] || ''), cuts: String(p['cuts'] || 'Whole').split('|').map(function (c) { return c.trim(); }).filter(String),
       price: Number(p['price per kg']) || 0, yieldPct: Number(p['yield %']) || 0, show: !(avail === 'no' || avail === 'sold out'),
-      showLeft: !/^n/i.test(String(p['show kg left'] || '').trim()), showOrigin: !/^n/i.test(String(p['show origin'] || '').trim()) };
+      showLeft: !/^n/i.test(String(p['show kg left'] || '').trim()), showOrigin: !/^n/i.test(String(p['show origin'] || '').trim()),
+      note: String(p['note for customers'] || '').trim() };
   });
 }
 /** What customers can order right now: live lots that can still be delivered on the plan's day, grouped by fish and size. */
@@ -300,7 +301,7 @@ function shop_() {
     opts.sort(function (a, b) { return SIZES.indexOf(a.size) - SIZES.indexOf(b.size) || a.price - b.price; });
     var hbs = []; opts.forEach(function (o) { if (o.harbour && hbs.indexOf(o.harbour) === -1) hbs.push(o.harbour); });
     return { id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: name, en: f.en, mr: f.mr, group: f.group,
-      origin: f.showOrigin ? (hbs.length ? hbs.join(' and ') : (f.from || '')) : '', showLeft: f.showLeft, showOrigin: f.showOrigin,
+      origin: f.showOrigin ? (hbs.length ? hbs.join(' and ') : (f.from || '')) : '', showLeft: f.showLeft, showOrigin: f.showOrigin, note: f.note,
       cuts: f.cuts.length ? f.cuts : ['Whole'], yieldPct: f.yieldPct, options: opts,
       price: Math.min.apply(null, opts.map(function (o) { return o.price; })), left: opts.reduce(function (a, o) { return a + o.left; }, 0), available: true };
   });
@@ -804,6 +805,7 @@ function saveFish_(o, by) {
   if (o.cuts !== undefined) set('Cuts', (o.cuts || []).map(function (x) { return String(x).trim(); }).filter(String).slice(0, 8).join(' | ') || 'Whole');
   if (o.price !== undefined && Number(o.price) > 0) set('Price per kg', Number(o.price));
   if (o.yieldPct !== undefined) set('Yield %', o.yieldPct === '' ? '' : Math.max(0, Math.min(100, Number(o.yieldPct))));
+  if (o.note !== undefined) set('Note for customers', String(o.note).trim().slice(0, 200));
   if (o.showLeft !== undefined) set('Show kg left', o.showLeft ? 'Yes' : 'No');
   if (o.showOrigin !== undefined) set('Show origin', o.showOrigin ? 'Yes' : 'No');
   if (o.show !== undefined) set('Available', o.show ? 'Yes' : 'No');

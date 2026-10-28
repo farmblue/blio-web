@@ -262,11 +262,22 @@
       return '<li><span class="wn num">' + (i + 1) + '</span><span><b>' + x[0] + '</b><span>' + x[1] + '</span></span></li>';
     }).join('') + '</ol></section>';
   }
+  // Computers with a mouse can't swipe sideways, so rows get arrow buttons (shown only for a mouse) and the wheel scrolls them.
+  function fitArrows() {
+    main.querySelectorAll('.rarr').forEach(function (x) {
+      var r = x.closest('section').querySelector('.orail, .rail');
+      x.style.visibility = r && r.scrollWidth > r.clientWidth + 2 ? '' : 'hidden';
+    });
+  }
+  window.addEventListener('resize', function () { if (S.screen === 'home') { fitArrows(); } });
+  function arrows() {
+    return '<span class="rarr"><button class="press" data-act="rscroll" data-v="-1" aria-label="Scroll left">‹</button><button class="press" data-act="rscroll" data-v="1" aria-label="Scroll right">›</button></span>';
+  }
   function offersHtml() {
     var list = [];
     S.products.forEach(function (p) { p.options.forEach(function (o) { if (o.offer && p.available && kgLeft(p, o.key) > 0) { list.push({ p: p, o: o }); } }); });
     if (!list.length) { return ''; }
-    return '<section class="offers"><h2 class="osec">Today’s offers</h2><div class="orail">' + list.map(function (x) {
+    return '<section class="offers"><div class="rhead"><h2 class="osec">Today’s offers</h2>' + arrows() + '</div><div class="orail">' + list.map(function (x) {
       var l = kgLeft(x.p, x.o.key);
       return '<button class="offc press" data-act="offer" data-id="' + esc(x.p.id) + '" data-v="' + esc(x.o.key) + '"><span class="pct">' + x.o.off + '% off</span>' +
         '<b>' + esc(x.p.name) + '</b><small>' + esc(x.o.size || x.p.en || '') + '</small>' +
@@ -322,7 +333,7 @@
         '<a class="reqlink" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener"><b>Don’t see your fish?</b><span>Request it on WhatsApp and we’ll look for it on our next harbour run.</span></a></section>'
         : '<div class="box chbox" style="margin-top:24px"><span>' + (S.pending ? 'This page checks for the catch every minute.' : 'Check again for new catch.') + '</span>' + reloadBtn() + '</div>') +
       whyHtml() +
-      '<section class="how"><h2 class="anton">Boat to door</h2><div class="rail-bar"><span id="railbar"></span></div>' +
+      '<section class="how"><div class="rhead"><h2 class="anton">Boat to door</h2>' + arrows() + '</div><div class="rail-bar"><span id="railbar"></span></div>' +
       '<div class="rail" id="rail">' +
         step('Fresh from the harbour', 'Bought early morning from boats in North Goa and on the Konkan coast.', 32, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
         step('You order by ' + fmtT(s.cutoff), 'Pick the fish, size, pack and cut. Orders after ' + fmtT(s.cutoff) + ' go out the next evening.', 64, '#2456A6', '<svg width="170" height="170" viewBox="0 0 170 170" aria-hidden="true"><circle cx="85" cy="85" r="72" fill="#ECE6D6"/><circle cx="85" cy="85" r="6" fill="#12272C"/><rect x="82" y="34" width="6" height="54" fill="#12272C"/><rect x="82" y="82" width="40" height="6" fill="#C2462A"/></svg>') +
@@ -407,7 +418,7 @@
                  : '<button class="btn dark press" data-act="map">Pin your location on the map</button>') +
           '<span class="hint">Optional, but it helps our delivery person find your door.</span></div>'
         : '<div class="box">Collect from the Blio cleaning point in Kolhapur, ' + esc(w.delivery) + ', ' + range() + '. We share the exact location on WhatsApp.</div>') +
-      '<div class="fld"><label for="f-notes">Notes (optional)</label><input id="f-notes" data-f="notes" placeholder="Cleaning preferences, timing" value="' + esc(f.notes) + '"></div>' +
+      '<div class="fld"><label for="f-notes">Notes (optional)</label><input id="f-notes" data-f="notes" placeholder="Cleaning preferences, like deveining (if time allows)" value="' + esc(f.notes) + '"></div>' +
       (S.coupon ? '<div class="cpon"><span><b>' + esc(S.coupon.code) + '</b> applied · ' + esc(S.coupon.label) + (S.coupon.partial ? ' on items not on offer' : '') + (S.cChecking ? ' · checking…' : '') + '</span><button class="linkbtn" data-act="cremove">Remove</button></div>'
         : '<div class="fld"><label for="f-coupon">Coupon code (optional)</label><div class="crow2"><input id="f-coupon" autocapitalize="characters" autocomplete="off" placeholder="Enter code" value="' + esc(S.cDraft || '') + '">' +
           '<button class="btn dark press" data-act="capply"' + (S.cChecking ? ' disabled' : '') + '>' + (S.cChecking ? 'Checking…' : 'Apply') + '</button></div>' +
@@ -549,7 +560,8 @@
         '<span class="sub">' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + (p.origin ? ' · from ' + esc(p.origin) : '') + '</span>' +
         '<span class="pr num">' + (o.off ? '<s>' + rs(o.base) + '</s> ' : '') + rs(o.price) + ' per kg' + (o.off ? ' · ' + o.off + '% off' : '') +
           (!showOpts && whereWhen(o) ? ' · ' + esc(whereWhen(o)) : '') + '</span>' +
-        '<span class="sub" style="font-size:14px">Weighed whole, before cleaning.' + yieldTxt + '</span></div>' +
+        '<span class="sub" style="font-size:14px">Weighed whole, before cleaning.' + yieldTxt + '</span>' +
+        (p.note ? '<span class="fnote">' + esc(p.note) + '</span>' : '') + '</div>' +
       opts +
       '<div style="display:flex;flex-direction:column;gap:8px"><span class="lab">Pack</span>' +
         '<div class="seg" data-on="' + (k.pack === '1 kg' ? 1 : 0) + '"><span class="ind"></span>' +
@@ -909,7 +921,7 @@
 
   // ---------- render ----------
   function render(anim) {
-    if (S.screen === 'home') { main.innerHTML = homeHtml(anim); bindRail(); }
+    if (S.screen === 'home') { main.innerHTML = homeHtml(anim); bindRail(); fitArrows(); }
     else if (S.screen === 'slip') { main.innerHTML = slipHtml(anim); }
     else if (S.screen === 'delivery') { main.innerHTML = deliveryHtml(anim); }
     else if (S.screen === 'pay') { main.innerHTML = payHtml(anim); }
@@ -996,6 +1008,7 @@
       case 'packed': packAct('packed', a.getAttribute('data-id')); break;
       case 'unpack': packAct('unpack', a.getAttribute('data-id')); break;
       case 'reorder': reorder(a.getAttribute('data-id')); break;
+      case 'rscroll': var rr = a.closest('section').querySelector('.orail, .rail'); if (rr) { rr.scrollBy({ left: Number(v) * rr.clientWidth * 0.8, behavior: 'smooth' }); } break;
       case 'mapclose': closeMap(); break;
       case 'locate': locate(); break;
       case 'mapok': confirmMap(); break;
@@ -1049,4 +1062,19 @@
   enterRoute();
   if (!DELIVERY_APP) { loadApi(); }
   if ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('/sw.js').catch(function () {}); }
+})();
+
+/* Mouse wheel scrolls sideways rows (offers, Boat to door, admin chips) on computers. Phones and trackpads are untouched. */
+(function () {
+  var last = 0;
+  document.addEventListener('wheel', function (e) {
+    var r = e.target.closest && e.target.closest('.orail, .rail, .chiprow');
+    if (!r || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) { return; }
+    var max = r.scrollWidth - r.clientWidth; if (max <= 2) { return; }
+    var dir = e.deltaY > 0 ? 1 : -1;
+    if ((dir > 0 && r.scrollLeft >= max - 2) || (dir < 0 && r.scrollLeft <= 2)) { return; }
+    e.preventDefault();
+    var now = Date.now(); if (now - last < 250) { return; } last = now;
+    r.scrollBy({ left: dir * Math.max(160, r.clientWidth * 0.6), behavior: 'smooth' });
+  }, { passive: false });
 })();

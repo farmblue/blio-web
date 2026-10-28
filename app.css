@@ -412,3 +412,15 @@ s.was{font-weight:500;opacity:.55;margin-right:6px}
 .whyl b{display:block;font-size:17px;font-weight:600;margin-bottom:3px}
 .whyl li > span:last-child > span{font-size:15px;line-height:1.45;color:var(--body-g)}
 .dcard .linkbtn.dk{align-self:center;color:var(--muted)}
+
+/* sideways rows on computers */
+.rhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.rarr{display:none;gap:6px}
+.rarr button{width:40px;height:40px;border:0;background:var(--raised);color:var(--paper);font-size:24px;line-height:1}
+@media (hover:hover) and (pointer:fine){
+  .rarr{display:flex}
+  .rarr button:hover{background:var(--raised-press)}
+  .chiprow{flex-wrap:wrap;overflow:visible}
+}
+.fnote{margin-top:6px;padding:10px 12px;background:var(--paper-2);font-size:14px;line-height:1.45;color:var(--ink)}
+textarea.anote{height:auto;min-height:72px;padding:10px 14px;font-family:inherit;line-height:1.4;resize:vertical}
