@@ -9,6 +9,7 @@
  * POST action=start       rider starts the round: orders become Out for delivery (needs the delivery PIN)
  * POST action=next        rider's next stop: that order becomes Arriving next (needs the delivery PIN)
  * POST action=delivered   marks an order Delivered (needs the delivery PIN)
+ * POST action=admin       Blio Admin app (blio.in/admin): load, order, product, settings, bill (needs the admin password)
  * Sheet menu Blio > Make bill for selected order   PDF bill in Drive plus a WhatsApp link to send it
  */
 
@@ -29,7 +30,8 @@ var SETTINGS = [
   ['UPI ID', ''],
   ['Payee name', 'Farmblue Agrotech Private Limited'],
   ['FSSAI number', ''],
-  ['Delivery person mobile', '']
+  ['Delivery person mobile', ''],
+  ['Admin password (8 or more characters)', '']
 ];
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
@@ -62,6 +64,7 @@ function setup_() {
   s.getRange('B2').setNumberFormat('@');
   s.getRange('B4').setNumberFormat('@');
   s.getRange('B8').setNumberFormat('@');
+  s.getRange('B9').setNumberFormat('@');
 }
 function isPaid_(status, payment) { return String(payment).trim() === 'Paid' || String(status).trim() === 'Paid'; }
 function now_() { return Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a'); }
@@ -252,6 +255,7 @@ function doPost(e) {
   try {
     var o = JSON.parse(e.postData.contents);
     if (o.action === 'delivered' || o.action === 'start' || o.action === 'next') return json_(stage_(o));
+    if (o.action === 'admin') return json_(admin_(o));
     return json_(placeOrder_(o));
   } catch (err) {
     return json_({ ok: false, error: 'server' });
@@ -354,6 +358,133 @@ function placeOrder_(o) {
   return { ok: true, id: id, token: token, window: w, subtotal: sub, fee: fee, total: sub + fee, lines: lines };
 }
 
+// ---------- Blio Admin app ----------
+function adminCheck_(pw) {
+  var real = String(setting_('Admin password')).trim();
+  if (real.length < 8) return 'setup';
+  var cache = CacheService.getScriptCache();
+  var bad = Number(cache.get('badadmin') || 0);
+  if (bad >= 10) return 'locked';
+  if (String(pw || '') === real) return 'ok';
+  cache.put('badadmin', String(bad + 1), 600);
+  return 'wrong';
+}
+function adminLog_(by, what) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), lg = ss.getSheetByName('Admin log');
+  if (!lg) { lg = ss.insertSheet('Admin log'); lg.appendRow(['Time', 'By', 'What']); }
+  lg.appendRow([now_(), String(by || '').slice(0, 40), String(what).slice(0, 300)]);
+}
+function findRow_(sh, col, value) {
+  var n = sh.getLastRow() - 1; if (n < 1) return 0;
+  var v = sh.getRange(2, col, n, 1).getDisplayValues();
+  for (var i = 0; i < v.length; i++) if (String(v[i][0]).trim() === String(value)) return i + 2;
+  return 0;
+}
+function adminOrders_() {
+  var sh = sheet_('Orders'), c = colIndex_(sh), last = sh.getLastRow();
+  if (last < 2) return [];
+  var start = Math.max(2, last - 299), n = last - start + 1, w = sh.getLastColumn();
+  var raw = sh.getRange(start, 1, n, w).getValues(), disp = sh.getRange(start, 1, n, w).getDisplayValues(), out = [];
+  var g = function (r, k) { return c[k] ? r[c[k] - 1] : ''; };
+  for (var i = n - 1; i >= 0; i--) {
+    var id = String(g(disp[i], 'Order ID')).trim(); if (!id) continue;
+    var st = String(g(disp[i], 'Status')).trim() || 'New';
+    out.push({
+      id: id, placed: String(g(disp[i], 'Placed at')), window: String(g(disp[i], 'Window')), name: String(g(disp[i], 'Name')),
+      mobile: String(g(disp[i], 'Mobile')).replace(/[^0-9]/g, '').slice(-10), address: String(g(disp[i], 'Address')),
+      area: String(g(disp[i], 'Area')), items: String(g(disp[i], 'Items')), notes: String(g(disp[i], 'Notes')),
+      total: Number(g(raw[i], 'Total')) || 0, final: g(raw[i], 'Final amount') === '' ? '' : Number(g(raw[i], 'Final amount')),
+      status: st === 'Paid' ? 'Confirmed' : st, paid: isPaid_(st, g(disp[i], 'Payment')), map: String(g(disp[i], 'Map') || ''),
+      bill: String(g(disp[i], 'Bill') || ''), outAt: String(g(disp[i], 'Out at') || ''), deliveredAt: String(g(disp[i], 'Delivered at') || '')
+    });
+  }
+  return out;
+}
+function adminProducts_(w) {
+  var used = orderedKg_(w);
+  return rows_('Products').filter(function (p) { return String(p['name']).trim(); }).map(function (p) {
+    var name = String(p['name']).trim(), cap = p['kg for this window'], avail = String(p['available']).trim().toLowerCase();
+    var cp = (cap === '' || cap === null) ? '' : Number(cap);
+    return { name: name, group: String(p['group'] || ''), price: Number(p['price per kg']) || 0, cap: cp,
+      ordered: used[name] || 0, left: cp === '' ? '' : Math.max(0, cp - (used[name] || 0)),
+      available: !(avail === 'no' || avail === 'sold out') };
+  });
+}
+function adminSettings_() {
+  return { fee: deliveryFee_(), upi: String(setting_('UPI ID')).trim(), payee: String(setting_('Payee name')).trim(),
+    rider: String(setting_('Delivery person mobile')).trim(), fssai: String(setting_('FSSAI number')).trim(),
+    pin: String(setting_('Delivery PIN')).trim() };
+}
+function setSetting_(prefix, value) {
+  var sh = sheet_('Settings'), v = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
+  for (var i = 1; i < v.length; i++) if (String(v[i][0]).indexOf(prefix) === 0) { sh.getRange(i + 1, 2).setNumberFormat('@').setValue(value); return true; }
+  return false;
+}
+function admin_(o) {
+  var chk = adminCheck_(o.pw);
+  if (chk !== 'ok') return { ok: false, error: chk };
+  setup_();
+  var by = String(o.by || 'Admin').trim() || 'Admin';
+  var w = syncWindow_();
+  if (o.op === 'load') {
+    return { ok: true, window: w, orders: adminOrders_(), products: adminProducts_(w), settings: adminSettings_(),
+      sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
+  }
+  if (o.op === 'order') {
+    var sh = sheet_('Orders'), c = colIndex_(sh), row = findRow_(sh, c['Order ID'], o.id);
+    if (!row) return { ok: false, error: 'notfound' };
+    var did = [];
+    if (o.status !== undefined) {
+      if (STATUSES.indexOf(o.status) === -1) return { ok: false, error: 'bad' };
+      sh.getRange(row, c['Status']).setValue(o.status); did.push('status ' + o.status);
+      if (o.status === 'Delivered' && !String(sh.getRange(row, c['Delivered at']).getValue()).trim()) sh.getRange(row, c['Delivered at']).setNumberFormat('@').setValue(now_());
+      if (o.status === 'Out for delivery' && !String(sh.getRange(row, c['Out at']).getValue()).trim()) sh.getRange(row, c['Out at']).setNumberFormat('@').setValue(now_());
+    }
+    if (o.payment !== undefined) {
+      if (['Paid', 'Unpaid'].indexOf(o.payment) === -1) return { ok: false, error: 'bad' };
+      sh.getRange(row, c['Payment']).setValue(o.payment); did.push('payment ' + o.payment);
+    }
+    if (o.final !== undefined) {
+      var f = o.final === '' || o.final === null ? '' : Math.round(Number(o.final));
+      if (f !== '' && !(f >= 0 && f < 1000000)) return { ok: false, error: 'bad' };
+      sh.getRange(row, c['Final amount']).setNumberFormat('"₹"#,##0').setValue(f); did.push('final amount ' + (f === '' ? 'cleared' : f));
+    }
+    adminLog_(by, o.id + ': ' + did.join(', '));
+    return { ok: true };
+  }
+  if (o.op === 'product') {
+    var ps = sheet_('Products'), pc = colIndex_(ps), prow = findRow_(ps, pc['Name'], o.name);
+    if (!prow) return { ok: false, error: 'notfound' };
+    var pd = [];
+    if (o.price !== undefined) { var pr = Number(o.price); if (!(pr > 0 && pr < 100000)) return { ok: false, error: 'bad' }; ps.getRange(prow, pc['Price per kg']).setValue(pr); pd.push('price ' + pr); }
+    if (o.cap !== undefined) { var cp = o.cap === '' || o.cap === null ? '' : Number(o.cap); if (cp !== '' && !(cp >= 0 && cp < 10000)) return { ok: false, error: 'bad' }; ps.getRange(prow, pc['Kg for this window']).setValue(cp); pd.push('kg ' + (cp === '' ? 'no limit' : cp)); }
+    if (o.available !== undefined) { ps.getRange(prow, pc['Available']).setValue(o.available ? 'Yes' : 'No'); pd.push(o.available ? 'available' : 'sold out'); }
+    adminLog_(by, o.name + ': ' + pd.join(', '));
+    return { ok: true, product: adminProducts_(w).filter(function (p) { return p.name === String(o.name); })[0] };
+  }
+  if (o.op === 'settings') {
+    var map = { fee: 'Delivery fee', upi: 'UPI ID', payee: 'Payee name', rider: 'Delivery person mobile', fssai: 'FSSAI number', pin: 'Delivery PIN' };
+    var sd = [];
+    Object.keys(map).forEach(function (k) {
+      if (o[k] === undefined) return;
+      var v = String(o[k]).trim().slice(0, 80);
+      if (k === 'fee') { v = Number(v); if (!(v >= 0 && v < 10000)) return; }
+      if (k === 'pin' && v && !/^[0-9]{4,8}$/.test(v)) return;
+      setSetting_(map[k], v); sd.push(k);
+    });
+    adminLog_(by, 'settings: ' + sd.join(', '));
+    return { ok: true, settings: adminSettings_() };
+  }
+  if (o.op === 'bill') {
+    var bs = sheet_('Orders'), bc = colIndex_(bs), brow = findRow_(bs, bc['Order ID'], o.id);
+    if (!brow) return { ok: false, error: 'notfound' };
+    var b = billFor_(bs, brow);
+    adminLog_(by, o.id + ': bill made');
+    return { ok: true, url: b.url, wa: b.wa, payable: b.payable };
+  }
+  return { ok: false, error: 'bad' };
+}
+
 // ---------- bills ----------
 function esc_(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 function inr_(n) { return 'Rs. ' + Math.round(Number(n) || 0).toLocaleString('en-IN'); }   // PDF fonts may lack the rupee sign
@@ -363,18 +494,12 @@ function billsFolder_() {
   return it.hasNext() ? it.next() : DriveApp.createFolder('Blio bills');
 }
 
-function makeBill() {
-  var ui = SpreadsheetApp.getUi();
-  setup_();
-  var sh = SpreadsheetApp.getActiveSheet();
-  if (sh.getName() !== 'Orders') { ui.alert('Open the Orders tab, click any cell in the order\'s row, then choose Blio > Make bill again.'); return; }
-  var row = sh.getActiveRange().getRow();
-  if (row < 2) { ui.alert('Click a cell in an order\'s row first, not the heading row.'); return; }
+/** Makes the PDF bill for the order on this row of Orders. Returns what the menu and the admin app need. */
+function billFor_(sh, row) {
   var c = colIndex_(sh), r = sh.getRange(row, 1, 1, sh.getLastColumn()).getValues()[0];
   var get = function (k) { return c[k] ? r[c[k] - 1] : ''; };
   var id = String(sh.getRange(row, c['Order ID']).getDisplayValue());
-  if (!id) { ui.alert('This row has no Order ID.'); return; }
-
+  if (!id) return null;
   var lines = rows_('Order lines').filter(function (l) { return String(l['order id']) === id; });
   var sub = Number(get('Subtotal')) || 0, fee = Number(get('Delivery')) || 0, total = Number(get('Total')) || sub + fee;
   var fin = get('Final amount'), payable = fin === '' ? total : Number(fin);
@@ -418,12 +543,24 @@ function makeBill() {
     (isPaid_(get('Status'), get('Payment')) ? '\n\nPayment received. Thank you!' : (upi ? '\n\nPay by UPI here: ' + payLink : ''));
   var wa = 'https://wa.me/91' + mobile + '?text=' + encodeURIComponent(msg);
 
+  return { id: id, url: file.getUrl(), payable: payable, wa: mobile.length === 10 ? wa : '', upi: upi };
+}
+
+function makeBill() {
+  var ui = SpreadsheetApp.getUi();
+  setup_();
+  var sh = SpreadsheetApp.getActiveSheet();
+  if (sh.getName() !== 'Orders') { ui.alert('Open the Orders tab, click any cell in the order\'s row, then choose Blio > Make bill again.'); return; }
+  var row = sh.getActiveRange().getRow();
+  if (row < 2) { ui.alert('Click a cell in an order\'s row first, not the heading row.'); return; }
+  var b = billFor_(sh, row);
+  if (!b) { ui.alert('This row has no Order ID.'); return; }
   var out = HtmlService.createHtmlOutput(
     '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.5">' +
-    '<p>Bill for <b>' + esc_(id) + '</b> saved: ' + rupee_(payable) + '.</p>' +
-    (mobile.length === 10 ? '<p><a href="' + esc_(wa) + '" target="_blank" style="display:inline-block;background:#C2462A;color:#fff;padding:10px 16px;text-decoration:none;font-weight:bold">Send on WhatsApp</a></p>' : '<p>No valid mobile number on this order.</p>') +
-    '<p><a href="' + esc_(file.getUrl()) + '" target="_blank">Open the bill</a></p>' +
-    (upi ? '' : '<p style="color:#8C3418">Add the UPI ID in Settings to include a payment link.</p>') + '</div>'
+    '<p>Bill for <b>' + esc_(b.id) + '</b> saved: ' + rupee_(b.payable) + '.</p>' +
+    (b.wa ? '<p><a href="' + esc_(b.wa) + '" target="_blank" style="display:inline-block;background:#C2462A;color:#fff;padding:10px 16px;text-decoration:none;font-weight:bold">Send on WhatsApp</a></p>' : '<p>No valid mobile number on this order.</p>') +
+    '<p><a href="' + esc_(b.url) + '" target="_blank">Open the bill</a></p>' +
+    (b.upi ? '' : '<p style="color:#8C3418">Add the UPI ID in Settings to include a payment link.</p>') + '</div>'
   ).setWidth(380).setHeight(230);
-  ui.showModalDialog(out, 'Bill ' + id);
+  ui.showModalDialog(out, 'Bill ' + b.id);
 }
