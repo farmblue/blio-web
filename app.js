@@ -88,7 +88,7 @@
         cta: 'The catch is being weighed. Check back in a few minutes.' });
     }
     if (!has) {
-      return Object.assign(base, { title: 'Next catch<br>soon', line: 'Nothing on sale right now. We buy at the morning auction on sourcing days and list the fish here once it reaches Kolhapur.',
+      return Object.assign(base, { title: 'Next catch<br>soon', line: 'Nothing on sale right now. We buy fresh at the harbour on sourcing days and list the fish here once it reaches Kolhapur.',
         cta: 'Looking for a particular fish? Ask us and we’ll tell you when it comes in.' });
     }
     if (p.sameDay) {
@@ -252,7 +252,7 @@
   }
   function whyHtml() {
     var items = [
-      ['Fresh from the auction', 'Bought at the morning auction. Each fish shows the harbour and the day it landed.'],
+      ['Fresh from the harbour', 'Bought the morning it lands. Each fish shows the harbour and the day it landed.'],
       ['Cleaned in a clean room', 'Cleaned and cut in our own dedicated room, on steel tables, with gloves.'],
       ['A fair, fixed price', 'The price per kg is shown before you order. No bargaining, no surprise rates.'],
       ['Packed properly', 'Food-grade bags, kept cold with ice or gel packs in an insulated box.'],
@@ -311,7 +311,7 @@
       '</div><div class="perf"></div>' +
       '<span class="notch" style="left:-13px;bottom:82px"></span><span class="notch" style="right:-13px;bottom:82px"></span>' +
       '<div class="facts"><span><small>Delivered</small><strong>' + (has ? esc(cap(w.delivery)) + ', ' + range() : 'Same evening if you order by ' + fmtT(s.cutoff)) + '</strong></span>' +
-      '<span><small>Bought at</small><strong>The morning auction, Goa and Konkan</strong></span></div></div>' +
+      '<span><small>From</small><strong>Konkan and Goa harbours</strong></span></div></div>' +
       offersHtml() +
       installHtml() +
       (S.reloadErr ? '<div class="box warn" role="alert" style="margin-top:16px">Couldn’t refresh. Check your internet connection.</div>' : '') +
@@ -319,12 +319,12 @@
         '<p class="lead">Priced per kg, weighed whole before cleaning. Cleaned and cut by hand in Kolhapur.</p>' +
         '<div class="crow"><span>' + (S.checkedAt ? 'Updated ' + new Date(S.checkedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '') + '</span>' + reloadBtn() + '</div>' +
         '<div class="groups">' + groups + '</div>' +
-        '<a class="reqlink" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener"><b>Don’t see your fish?</b><span>Request it on WhatsApp and we’ll look for it at the next auction.</span></a></section>'
+        '<a class="reqlink" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener"><b>Don’t see your fish?</b><span>Request it on WhatsApp and we’ll look for it on our next harbour run.</span></a></section>'
         : '<div class="box chbox" style="margin-top:24px"><span>' + (S.pending ? 'This page checks for the catch every minute.' : 'Check again for new catch.') + '</span>' + reloadBtn() + '</div>') +
       whyHtml() +
       '<section class="how"><h2 class="anton">Boat to door</h2><div class="rail-bar"><span id="railbar"></span></div>' +
       '<div class="rail" id="rail">' +
-        step('Bought at the auction', 'Early morning at the harbour, from boats in North Goa and on the Konkan coast.', 32, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
+        step('Fresh from the harbour', 'Bought early morning from boats in North Goa and on the Konkan coast.', 32, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
         step('You order by ' + fmtT(s.cutoff), 'Pick the fish, size, pack and cut. Orders after ' + fmtT(s.cutoff) + ' go out the next evening.', 64, '#2456A6', '<svg width="170" height="170" viewBox="0 0 170 170" aria-hidden="true"><circle cx="85" cy="85" r="72" fill="#ECE6D6"/><circle cx="85" cy="85" r="6" fill="#12272C"/><rect x="82" y="34" width="6" height="54" fill="#12272C"/><rect x="82" y="82" width="40" height="6" fill="#C2462A"/></svg>') +
         step('Cleaned to your cut', 'Whole, curry cut, steaks or fillet, done by hand in Kolhapur.', 40, '#ECE6D6', '<svg width="220" height="120" viewBox="0 0 220 120" aria-hidden="true"><path d="M14 60C56 14 140 14 176 60C140 106 56 106 14 60Z" fill="#2456A6"/><path d="M172 60l38-30v60z" fill="#2456A6"/><circle cx="46" cy="54" r="6" fill="#ECE6D6"/><rect x="84" y="20" width="6" height="80" fill="#ECE6D6"/><rect x="112" y="22" width="6" height="76" fill="#ECE6D6"/><rect x="140" y="30" width="6" height="60" fill="#ECE6D6"/></svg>') +
         step('At your door by ' + fmtT(s.end), 'Packed on ice and brought to your door, ' + range() + '.', 52, '#195360', '<svg width="180" height="180" viewBox="0 0 180 180" aria-hidden="true"><path d="M20 84L90 26l70 58v80H20z" fill="#ECE6D6"/><rect x="72" y="108" width="36" height="56" fill="#C2462A"/><rect x="38" y="98" width="24" height="24" fill="#2456A6"/><rect x="118" y="98" width="24" height="24" fill="#2456A6"/></svg>') +
