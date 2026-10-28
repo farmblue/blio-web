@@ -44,8 +44,11 @@ var SETTINGS = [
   ['Day-2 discount on (Yes or No)', 'No'],
   ['Day-2 discount (%)', 10],
   ['Show landing date (Yes or No)', 'Yes'],
-  ['Go live automatically after (minutes)', 30]
+  ['Go live automatically after (minutes)', 30],
+  ['Auto go-live on (Yes or No)', 'Yes'],
+  ['Harbours (separated by commas)', 'Goa, Vengurla, Malvan, Devgad, Ratnagiri']
 ];
+var SETUP_VERSION = '2026-10-28b';   // change this when setup_ adds new tabs, columns or settings
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
   address: 'House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra',
@@ -53,7 +56,18 @@ var COMPANY = {
   contact: 'WhatsApp +91 88568 88766 · connect@farmblue.in'
 };
 
-function sheet_(name) { return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name); }
+// Everything read from the sheet is remembered for the rest of one request, so each tab is read once.
+var RC_ = {};
+function bust_() { RC_ = {}; }
+function ss_() { return RC_.ss || (RC_.ss = SpreadsheetApp.getActiveSpreadsheet()); }
+function sheet_(name) { var k = 's:' + name; if (!RC_[k]) RC_[k] = ss_().getSheetByName(name); return RC_[k]; }
+/** Runs setup only once per script version instead of on every request. */
+function ensureSetup_() {
+  var p = PropertiesService.getScriptProperties();
+  if (p.getProperty('setup') === SETUP_VERSION) return;
+  setup_(); p.setProperty('setup', SETUP_VERSION); bust_();
+}
+function dropShop_() { try { CacheService.getScriptCache().remove('shop'); } catch (e) {} }
 
 // ---------- setup (safe to run any number of times) ----------
 function ensureHeaders_(sh, cols) {
@@ -68,9 +82,9 @@ function ensureHeaders_(sh, cols) {
   });
 }
 function tab_(name, cols, seed) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(name);
+  var ss = ss_(), sh = ss.getSheetByName(name);
   if (!sh) {
-    sh = ss.insertSheet(name);
+    sh = ss.insertSheet(name); RC_['s:' + name] = sh;
     sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold').setBackground('#12404A').setFontColor('#FFFFFF');
     sh.setFrozenRows(1);
     if (seed && seed.length) sh.getRange(2, 1, seed.length, seed[0].length).setValues(seed);
@@ -80,15 +94,16 @@ function tab_(name, cols, seed) {
 function setup_() {
   ensureHeaders_(sheet_('Orders'), ORDER_COLS);
   ensureHeaders_(sheet_('Order lines'), ['Order ID', 'Window', 'Item', 'Pack', 'Cut', 'Qty', 'Kg', 'Line total', 'Status', 'Lot', 'Size']);
-  ensureHeaders_(sheet_('Products'), ['Yield %']);
+  ensureHeaders_(sheet_('Products'), ['Yield %', 'Show kg left', 'Show origin']);
   tab_('Stock', STOCK_COLS);
   tab_('Counts', COUNT_COLS);
   tab_('Categories', CAT_COLS, CAT_SEED);
-  var s = sheet_('Settings');
+  var s = sheet_('Settings'), have = s.getRange(2, 1, SETTINGS.length, 1).getValues();
   SETTINGS.forEach(function (row, i) {
     var r = i + 2;
-    if (!String(s.getRange(r, 1).getValue()).trim()) { s.getRange(r, 2).setNumberFormat('@'); s.getRange(r, 1, 1, 2).setValues([[row[0], String(row[1])]]); }
+    if (!String(have[i][0]).trim()) { s.getRange(r, 2).setNumberFormat('@'); s.getRange(r, 1, 1, 2).setValues([[row[0], String(row[1])]]); }
   });
+  bust_();
   s.getRange('B2').setNumberFormat('@');
   s.getRange('B4').setNumberFormat('@');
   s.getRange('B8').setNumberFormat('@');
@@ -119,19 +134,20 @@ function tidyOrders_() {
   }
 }
 function colIndex_(sh) {
+  var k = 'c:' + sh.getName(); if (RC_[k]) return RC_[k];
   var head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0], m = {};
   head.forEach(function (h, i) { m[String(h).trim()] = i + 1; });
-  return m;
+  return (RC_[k] = m);
 }
 function setting_(prefix) {
-  var v = sheet_('Settings').getDataRange().getValues();
+  var v = RC_.settings || (RC_.settings = sheet_('Settings').getDataRange().getValues());
   for (var i = 1; i < v.length; i++) { if (String(v[i][0]).indexOf(prefix) === 0) return v[i][1]; }
   return '';
 }
 
 function onOpen() {
-  syncWindow_();
   setup_();
+  try { PropertiesService.getScriptProperties().setProperty('setup', SETUP_VERSION); } catch (e) {}
   tidyOrders_();
   SpreadsheetApp.getUi().createMenu('Blio').addItem('Make bill for selected order', 'makeBill').addToUi();
 }
@@ -186,7 +202,7 @@ function sched_() {
   var pct = Number(setting_('Day-2 discount (%')); if (!(pct >= 0 && pct <= 90)) pct = 10;
   var auto = Number(setting_('Go live automatically')); if (!(auto >= 0 && auto <= 600)) auto = 30;
   return { start: timeSetting_('Delivery starts', '17:00'), end: timeSetting_('Delivery ends', '20:00'), cutoff: timeSetting_('Same-day order cut-off', '15:00'),
-    sellDays: days, discOn: yes_('Day-2 discount on', false), discPct: pct, showLanding: yes_('Show landing date', true), autoMin: auto };
+    sellDays: days, discOn: yes_('Day-2 discount on', false), discPct: pct, showLanding: yes_('Show landing date', true), autoMin: auto, autoOn: yes_('Auto go-live on', true) };
 }
 /** Delivery day for an order placed now: today before the cut-off, otherwise tomorrow. */
 function deliveryPlan_(sc) {
@@ -208,7 +224,7 @@ function lots_() {
 }
 function isLive_(l, sc) {
   if (l.status === 'Live') return true;
-  if (l.status === 'Draft') return nowMin_() - enteredMin_(l.enteredAt) >= sc.autoMin;
+  if (l.status === 'Draft') return sc.autoOn && nowMin_() - enteredMin_(l.enteredAt) >= sc.autoMin;
   return false;
 }
 /** kg taken by orders per lot; upTo (yyyy-MM-dd) counts only orders delivered on or before that day. */
@@ -248,7 +264,8 @@ function catalog_() {
     var avail = String(p['available']).trim().toLowerCase();
     return { name: String(p['name']).trim(), en: String(p['english name'] || ''), mr: String(p['marathi name'] || ''), group: String(p['group'] || 'Fish').trim(),
       from: String(p['from'] || ''), cuts: String(p['cuts'] || 'Whole').split('|').map(function (c) { return c.trim(); }).filter(String),
-      price: Number(p['price per kg']) || 0, yieldPct: Number(p['yield %']) || 0, show: !(avail === 'no' || avail === 'sold out') };
+      price: Number(p['price per kg']) || 0, yieldPct: Number(p['yield %']) || 0, show: !(avail === 'no' || avail === 'sold out'),
+      showLeft: !/^n/i.test(String(p['show kg left'] || '').trim()), showOrigin: !/^n/i.test(String(p['show origin'] || '').trim()) };
   });
 }
 /** What customers can order right now: live lots that can still be delivered on the plan's day, grouped by fish and size. */
@@ -265,17 +282,20 @@ function shop_() {
     if (left < 0.5) return;
     var day2 = dayDiff_(l.landed, plan.date) >= 1, price = l.price;
     if (day2 && sc.discOn) price = Math.round(l.price * (1 - sc.discPct / 100));
-    var key = l.size + '|' + price + '|' + (sc.showLanding ? l.landed : '');
+    var hb = f.showOrigin ? l.harbour : '';
+    var key = l.size + '|' + price + '|' + (sc.showLanding ? l.landed : '') + (hb ? '|' + hb : '');
     var g = byFish[l.fish] = byFish[l.fish] || {};
     var o = g[key] = g[key] || { key: key, size: l.size, price: price, base: l.price, off: day2 && sc.discOn ? sc.discPct : 0,
-      landed: sc.showLanding ? landedLabel_(l.landed) : '', left: 0, lots: [] };
+      landed: sc.showLanding ? landedLabel_(l.landed) : '', harbour: hb, left: 0, lots: [] };
     o.left = Math.round((o.left + left) * 100) / 100;
     o.lots.push({ lot: l.lot, left: left });
   });
   var products = Object.keys(byFish).map(function (name) {
     var f = cat[name], opts = Object.keys(byFish[name]).map(function (k) { return byFish[name][k]; });
     opts.sort(function (a, b) { return SIZES.indexOf(a.size) - SIZES.indexOf(b.size) || a.price - b.price; });
-    return { id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: name, en: f.en, mr: f.mr, group: f.group, origin: f.from || 'the Konkan coast',
+    var hbs = []; opts.forEach(function (o) { if (o.harbour && hbs.indexOf(o.harbour) === -1) hbs.push(o.harbour); });
+    return { id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: name, en: f.en, mr: f.mr, group: f.group,
+      origin: f.showOrigin ? (hbs.length ? hbs.join(' and ') : (f.from || '')) : '', showLeft: f.showLeft, showOrigin: f.showOrigin,
       cuts: f.cuts.length ? f.cuts : ['Whole'], yieldPct: f.yieldPct, options: opts,
       price: Math.min.apply(null, opts.map(function (o) { return o.price; })), left: opts.reduce(function (a, o) { return a + o.left; }, 0), available: true };
   });
@@ -284,13 +304,14 @@ function shop_() {
 
 // ---------- reading ----------
 function rows_(name) {
+  if (RC_['r:' + name]) return RC_['r:' + name];
   var values = sheet_(name).getDataRange().getValues();
   var head = values.shift().map(function (h) { return String(h).trim().toLowerCase(); });
-  return values.map(function (r) {
+  return (RC_['r:' + name] = values.map(function (r) {
     var o = {};
     head.forEach(function (h, i) { o[h] = r[i]; });
     return o;
-  });
+  }));
 }
 function orderedKg_(windowId) {
   var used = {};
@@ -389,6 +410,7 @@ function myOrders_(ids) {
 
 // ---------- web app ----------
 function doGet(e) {
+  bust_();
   var p = (e && e.parameter) || {};
   if (p.action === 'myorders') return json_({ ok: true, orders: myOrders_(String(p.ids || '')) });
   if (p.action === 'deliveries') {
@@ -396,8 +418,15 @@ function doGet(e) {
     if (chk !== 'ok') return json_({ ok: false, error: chk === 'locked' ? 'locked' : 'pin' });
     return json_({ ok: true, orders: deliveries_() });
   }
+  var cache = CacheService.getScriptCache(), hit = cache.get('shop');
+  if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
+  var out = JSON.stringify(shopOut_());
+  try { cache.put('shop', out, 20); } catch (err) {}
+  return ContentService.createTextOutput(out).setMimeType(ContentService.MimeType.JSON);
+}
+function shopOut_() {
   var sh = shop_();
-  return json_({ ok: true, mode: 'catch', plan: { date: sh.plan.date, label: sh.plan.label, sameDay: sh.plan.sameDay, today: sh.plan.today },
+  return ({ ok: true, mode: 'catch', plan: { date: sh.plan.date, label: sh.plan.label, sameDay: sh.plan.sameDay, today: sh.plan.today },
     schedule: { start: hhmm_(sh.sc.start), end: hhmm_(sh.sc.end), cutoff: hhmm_(sh.sc.cutoff) }, pending: sh.pending,
     categories: categories_(false).map(function (c) { return { name: c.name, mr: c.mr }; }),
     deliveryFee: deliveryFee_(), upi: String(setting_('UPI ID')).trim(), payee: String(setting_('Payee name')).trim(),
@@ -408,6 +437,7 @@ function doPost(e) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(15000)) return json_({ ok: false, error: 'busy' });
   try {
+    bust_();
     var o = JSON.parse(e.postData.contents);
     if (o.action === 'delivered' || o.action === 'start' || o.action === 'next') return json_(stage_(o));
     if (o.action === 'admin') return json_(admin_(o));
@@ -423,7 +453,7 @@ function doPost(e) {
 function stage_(o) {
   var chk = pinCheck_(o.pin);
   if (chk !== 'ok') return { ok: false, error: chk === 'locked' ? 'locked' : 'pin' };
-  setup_();
+  ensureSetup_();
   var sh = sheet_('Orders'), c = colIndex_(sh), n = Math.max(1, sh.getLastRow() - 1);
   var ids = sh.getRange(2, c['Order ID'], n, 1).getDisplayValues();
   var st = sh.getRange(2, c['Status'], n, 1).getValues();
@@ -452,7 +482,7 @@ function stage_(o) {
 }
 
 function placeOrder_(o) {
-  setup_();
+  ensureSetup_();
   var name = String(o.name || '').trim().slice(0, 80);
   var phone = String(o.phone || '').replace(/[^0-9]/g, '').slice(-10);
   var address = String(o.address || '').trim().slice(0, 300);
@@ -483,6 +513,7 @@ function placeOrder_(o) {
     if (want[k] > opt.left + 1e-9) short.push({ name: name, size: opt.size, left: opt.left });
   });
   if (short.length) return { ok: false, error: 'stock', short: short, products: fresh() };
+  dropShop_();
   // take stock from the oldest lot first
   lines.forEach(function (l) {
     var need = l.kg;
@@ -587,7 +618,7 @@ function adminSettings_() {
   return { fee: deliveryFee_(), upi: String(setting_('UPI ID')).trim(), payee: String(setting_('Payee name')).trim(),
     rider: String(setting_('Delivery person mobile')).trim(), fssai: String(setting_('FSSAI number')).trim(),
     pin: String(setting_('Delivery PIN')).trim(), start: hhmm_(sc.start), end: hhmm_(sc.end), cutoff: hhmm_(sc.cutoff),
-    sellDays: sc.sellDays, discOn: sc.discOn, discPct: sc.discPct, showLanding: sc.showLanding, autoMin: sc.autoMin };
+    sellDays: sc.sellDays, discOn: sc.discOn, discPct: sc.discPct, showLanding: sc.showLanding, autoMin: sc.autoMin, autoOn: sc.autoOn, harbours: harbours_() };
 }
 function adminLoad_() {
   var sc = sched_(), plan = deliveryPlan_(sc), today = ymd_(), sold = soldByLot_(), soldToday = soldByLot_(today), adj = adjByLot_();
@@ -630,6 +661,27 @@ function addLot_(o, by) {
   if (o.updatePrice && cat[fish].price !== price && !size) { var ps = sheet_('Products'), pc = colIndex_(ps), pr = findRow_(ps, pc['Name'], fish); if (pr) ps.getRange(pr, pc['Price per kg']).setValue(price); }
   adminLog_(by, 'catch ' + lot + ': ' + fish + (size ? ' ' + size : '') + ', ' + kgv + ' kg' + (pieces !== '' ? ', ' + pieces + ' pcs' : '') + ', ' + price + '/kg');
   return { ok: true, lot: lot };
+}
+/** One fish, several sizes in one go. Nothing is saved unless every row is valid. */
+function addLots_(o, by) {
+  var rows = (o.rows || []).filter(function (r) { return r && String(r.kg || '').trim() !== ''; }).slice(0, 6);
+  if (!rows.length) return { ok: false, error: 'bad' };
+  var seen = {}, bad = false;
+  rows.forEach(function (r) {
+    var sz = String(r.size || '').trim(), kgv = Number(r.kg), pr = Number(r.price);
+    if (seen[sz] || SIZES.indexOf(sz) === -1 || !(kgv > 0 && kgv < 5000) || !(pr > 0 && pr < 100000)) bad = true;
+    if (r.pieces !== '' && r.pieces != null && !(Number(r.pieces) >= 0 && Number(r.pieces) < 10000)) bad = true;
+    if (r.cost !== '' && r.cost != null && !(Number(r.cost) >= 0 && Number(r.cost) < 100000)) bad = true;
+    seen[sz] = 1;
+  });
+  if (bad) return { ok: false, error: 'bad' };
+  var ids = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = addLot_({ fish: o.fish, harbour: o.harbour, landed: o.landed, live: o.live, size: rows[i].size, kg: rows[i].kg, pieces: rows[i].pieces, cost: rows[i].cost, price: rows[i].price }, by);
+    if (!r.ok) return ids.length ? { ok: true, lots: ids, partial: true } : r;
+    ids.push(r.lot);
+  }
+  return { ok: true, lots: ids };
 }
 function editLot_(o, by) {
   var sh = sheet_('Stock'), c = colIndex_(sh), row = findRow_(sh, c['Lot'], o.lot);
@@ -680,6 +732,8 @@ function saveFish_(o, by) {
   if (o.cuts !== undefined) set('Cuts', (o.cuts || []).map(function (x) { return String(x).trim(); }).filter(String).slice(0, 8).join(' | ') || 'Whole');
   if (o.price !== undefined && Number(o.price) > 0) set('Price per kg', Number(o.price));
   if (o.yieldPct !== undefined) set('Yield %', o.yieldPct === '' ? '' : Math.max(0, Math.min(100, Number(o.yieldPct))));
+  if (o.showLeft !== undefined) set('Show kg left', o.showLeft ? 'Yes' : 'No');
+  if (o.showOrigin !== undefined) set('Show origin', o.showOrigin ? 'Yes' : 'No');
   if (o.show !== undefined) set('Available', o.show ? 'Yes' : 'No');
   else if (isNew) set('Available', 'Yes');
   adminLog_(by, (isNew ? 'added fish ' : 'edited fish ') + name);
@@ -699,6 +753,7 @@ function saveCategory_(o, by) {
   adminLog_(by, (isNew ? 'added category ' : 'edited category ') + name);
   return { ok: true };
 }
+function harbours_() { return String(setting_('Harbours')).split(',').map(function (x) { return x.trim(); }).filter(String); }
 function setSetting_(prefix, value) {
   var sh = sheet_('Settings'), v = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
   for (var i = 1; i < v.length; i++) if (String(v[i][0]).indexOf(prefix) === 0) { sh.getRange(i + 1, 2).setNumberFormat('@').setValue(value); return true; }
@@ -707,16 +762,17 @@ function setSetting_(prefix, value) {
 function admin_(o) {
   var chk = adminCheck_(o.pw);
   if (chk !== 'ok') return { ok: false, error: chk };
-  setup_();
+  ensureSetup_();
   var by = String(o.by || 'Admin').trim() || 'Admin';
-  var w = syncWindow_();
+  var withData = function (r) { if (r.ok) { dropShop_(); bust_(); r.data = adminLoad_(); } return r; };
   if (o.op === 'load') return adminLoad_();
-  if (o.op === 'lot') return addLot_(o, by);
-  if (o.op === 'lotedit') return editLot_(o, by);
-  if (o.op === 'golive') return goLive_(by);
-  if (o.op === 'count') return count_(o, by);
-  if (o.op === 'fish') return saveFish_(o, by);
-  if (o.op === 'category') return saveCategory_(o, by);
+  if (o.op === 'lot') return withData(addLot_(o, by));
+  if (o.op === 'lots') return withData(addLots_(o, by));
+  if (o.op === 'lotedit') return withData(editLot_(o, by));
+  if (o.op === 'golive') return withData(goLive_(by));
+  if (o.op === 'count') return withData(count_(o, by));
+  if (o.op === 'fish') return withData(saveFish_(o, by));
+  if (o.op === 'category') return withData(saveCategory_(o, by));
   if (o.op === 'order') {
     var sh = sheet_('Orders'), c = colIndex_(sh), row = findRow_(sh, c['Order ID'], o.id);
     if (!row) return { ok: false, error: 'notfound' };
@@ -737,6 +793,7 @@ function admin_(o) {
       sh.getRange(row, c['Final amount']).setNumberFormat('"₹"#,##0').setValue(f); did.push('final amount ' + (f === '' ? 'cleared' : f));
     }
     adminLog_(by, o.id + ': ' + did.join(', '));
+    if (o.status !== undefined) dropShop_();
     return { ok: true };
   }
   if (o.op === 'product') {
@@ -747,12 +804,12 @@ function admin_(o) {
     if (o.cap !== undefined) { var cp = o.cap === '' || o.cap === null ? '' : Number(o.cap); if (cp !== '' && !(cp >= 0 && cp < 10000)) return { ok: false, error: 'bad' }; ps.getRange(prow, pc['Kg for this window']).setValue(cp); pd.push('kg ' + (cp === '' ? 'no limit' : cp)); }
     if (o.available !== undefined) { ps.getRange(prow, pc['Available']).setValue(o.available ? 'Yes' : 'No'); pd.push(o.available ? 'available' : 'sold out'); }
     adminLog_(by, o.name + ': ' + pd.join(', '));
-    return { ok: true, product: adminProducts_(w).filter(function (p) { return p.name === String(o.name); })[0] };
+    return { ok: true, product: adminProducts_(currentWindow_()).filter(function (p) { return p.name === String(o.name); })[0] };
   }
   if (o.op === 'settings') {
     var map = { fee: 'Delivery fee', upi: 'UPI ID', payee: 'Payee name', rider: 'Delivery person mobile', fssai: 'FSSAI number', pin: 'Delivery PIN',
       start: 'Delivery starts', end: 'Delivery ends', cutoff: 'Same-day order cut-off', sellDays: 'Sell each catch for', discOn: 'Day-2 discount on',
-      discPct: 'Day-2 discount (%', showLanding: 'Show landing date', autoMin: 'Go live automatically' };
+      discPct: 'Day-2 discount (%', showLanding: 'Show landing date', autoMin: 'Go live automatically', autoOn: 'Auto go-live on', harbours: 'Harbours' };
     var sd = [];
     Object.keys(map).forEach(function (k) {
       if (o[k] === undefined) return;
@@ -763,9 +820,11 @@ function admin_(o) {
       if (k === 'sellDays' && !(Number(v) >= 1 && Number(v) <= 7)) return;
       if (k === 'discPct' && !(Number(v) >= 0 && Number(v) <= 90)) return;
       if (k === 'autoMin' && !(Number(v) >= 0 && Number(v) <= 600)) return;
+      if (k === 'harbours') v = String(o[k]).split(',').map(function (x) { return x.trim(); }).filter(String).slice(0, 20).join(', ').slice(0, 300);
       setSetting_(map[k], String(v)); sd.push(k);
     });
     adminLog_(by, 'settings: ' + sd.join(', '));
+    dropShop_(); bust_();
     return { ok: true, settings: adminSettings_() };
   }
   if (o.op === 'bill') {

@@ -123,8 +123,15 @@
     if (cached && cached._at && Date.now() - cached._at < 3 * 3600000 && applyApi(cached)) { render(false); }
     S.apiAt = Date.now();
     fetch(CONFIG.api, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
-      if (applyApi(d)) { d._at = Date.now(); store('api', d); if (S.screen === 'home' || S.screen === 'pay' || S.screen === 'slip') { keepScroll(); } }
-    }).catch(function () { if (S.apiState === 'loading') { S.apiState = 'error'; if (S.screen === 'home') { keepScroll(); } } });
+      var was = S.reloading; S.reloading = false;
+      if (applyApi(d)) { d._at = Date.now(); store('api', d); S.checkedAt = Date.now(); }
+      if (was || S.screen === 'home' || S.screen === 'pay' || S.screen === 'slip') { keepScroll(); }
+    }).catch(function () {
+      var was = S.reloading; S.reloading = false;
+      if (S.apiState === 'loading') { S.apiState = 'error'; }
+      if (was) { S.reloadErr = true; }
+      if (S.screen === 'home') { keepScroll(); }
+    });
   }
   function keepScroll() { var st = main.scrollTop; render(false); main.scrollTop = st; }
   function optOf(p, key) { return (p.options || []).filter(function (o) { return o.key === key; })[0]; }
@@ -148,6 +155,13 @@
     });
     if (dropped.length) { S.short = (S.short ? S.short + ' ' : '') + 'No longer available, so taken off your slip: ' + dropped.join(', ') + '.'; }
     saveCart();
+  }
+  function whereWhen(o) {
+    if (o.landed && o.harbour) { return o.landed + ' at ' + o.harbour; }
+    return o.landed || (o.harbour ? 'From ' + o.harbour : '');
+  }
+  function reloadBtn() {
+    return '<button class="linkbtn" data-act="reload"' + (S.reloading ? ' disabled' : '') + '>' + (S.reloading ? 'Refreshing…' : 'Refresh') + '</button>';
   }
   function lineLabel(l) { return (l.size ? l.size + ' · ' : '') + l.pack + ' · ' + l.cut; }
   function reqUrl(name) {
@@ -194,7 +208,7 @@
       var open = S.openGroup === g;
       var rows = open ? '<div class="items">' + items.map(function (p, i) {
         var left = p.options.reduce(function (a, o) { return a + (o.left === null || o.left === undefined ? Infinity : o.left); }, 0);
-        var out = !p.available || left <= 0, low = !out && left !== Infinity && left <= 5, off = offOf(p);
+        var out = !p.available || left <= 0, low = !out && p.showLeft !== false && left !== Infinity && left <= 5, off = offOf(p);
         var minP = Math.min.apply(null, p.options.map(function (o) { return o.price; }));
         var sizes = p.options.map(function (o) { return o.size; }).filter(Boolean);
         return '<button class="row item enter' + (out ? ' out' : '') + '" data-act="item" data-id="' + esc(p.id) + '" style="animation-delay:' + (i * 40) + 'ms"' + (out ? ' aria-disabled="true"' : '') + '>' +
@@ -220,11 +234,13 @@
       '<div class="facts"><span><small>Delivered</small><strong>' + (has ? esc(cap(w.delivery)) + ', ' + range() : 'Same evening if you order by ' + fmtT(s.cutoff)) + '</strong></span>' +
       '<span><small>Bought at</small><strong>The morning auction, Goa and Konkan</strong></span></div></div>' +
       installHtml() +
+      (S.reloadErr ? '<div class="box warn" role="alert" style="margin-top:16px">Couldn’t refresh. Check your internet connection.</div>' : '') +
       (has ? '<section class="catch" id="catch"><h2 class="anton">Catch</h2>' +
         '<p class="lead">Priced per kg, weighed whole before cleaning. Cleaned and cut by hand in Kolhapur.</p>' +
+        '<div class="crow"><span>' + (S.checkedAt ? 'Updated ' + new Date(S.checkedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '') + '</span>' + reloadBtn() + '</div>' +
         '<div class="groups">' + groups + '</div>' +
         '<a class="reqlink" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener"><b>Don’t see your fish?</b><span>Request it on WhatsApp and we’ll look for it at the next auction.</span></a></section>'
-        : (S.pending ? '<div class="box" style="margin-top:24px">This page checks for the catch every minute.</div>' : '')) +
+        : '<div class="box chbox" style="margin-top:24px"><span>' + (S.pending ? 'This page checks for the catch every minute.' : 'Check again for new catch.') + '</span>' + reloadBtn() + '</div>') +
       '<section class="how"><h2 class="anton">Boat to door</h2><div class="rail-bar"><span id="railbar"></span></div>' +
       '<div class="rail" id="rail">' +
         step('Bought at the auction', 'Early morning at the harbour, from boats in North Goa and on the Konkan coast.', 32, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
@@ -394,7 +410,7 @@
     var active = S.myorders.filter(function (o) { return o.status !== 'Delivered' && o.status !== 'Cancelled'; });
     var past = S.myorders.filter(function (o) { return o.status === 'Delivered' || o.status === 'Cancelled'; });
     return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="dhead"><h1 class="anton">Your orders</h1>' +
-        '<span class="dcount">' + (S.ordLoading ? 'Checking…' : '') + '</span></div>' +
+        (S.myorders.some(function (o) { return o.token; }) ? '<button class="linkbtn" data-act="ordreload"' + (S.ordLoading ? ' disabled' : '') + '>' + (S.ordLoading ? 'Checking…' : 'Refresh') + '</button>' : '') + '</div>' +
       (S.ordNote ? '<div class="box" role="status">' + esc(S.ordNote) + '</div>' : '') +
       (S.ordErr ? '<div class="box warn" role="alert">' + esc(S.ordErr) + '</div>' : '') +
       (!S.myorders.length ? '<div class="box">No orders on this phone yet. Orders you place from this phone show up here, with their status.</div>' +
@@ -432,16 +448,16 @@
       p.options.map(function (x) {
         var l = kgLeft(p, x.key), out = l <= 0;
         return '<button class="opt press" data-act="opt" data-v="' + esc(x.key) + '" aria-pressed="' + (x.key === o.key) + '"' + (out ? ' disabled' : '') + '>' +
-          '<span class="ol"><b>' + esc(x.size || 'Standard') + '</b><small>' + [x.landed, out ? 'Sold out' : l === Infinity ? '' : fmtKg(l) + ' left'].filter(Boolean).map(esc).join(' · ') + '</small></span>' +
+          '<span class="ol"><b>' + esc(x.size || 'One size') + '</b><small>' + [whereWhen(x), out ? 'Sold out' : l === Infinity || p.showLeft === false ? '' : fmtKg(l) + ' left'].filter(Boolean).map(esc).join(' · ') + '</small></span>' +
           '<span class="or num">' + (x.off ? '<s>' + rs(x.base) + '</s>' : '') + rs(x.price) + '<small>/kg</small></span></button>';
       }).join('') + '</div></div>' : '';
     var yieldTxt = p.yieldPct > 0 && p.yieldPct < 100 ? ' 1 kg gives about ' + Math.round(p.yieldPct * 10) + ' g after cleaning.' : '';
     return '<div class="grab" id="grab"><span class="h"></span><div class="field" style="background:' + (FIELD[p.group] || '#2456A6') + '">' + (ART[p.group] || ART.Fish) + '</div></div>' +
       '<div class="body"><div style="display:flex;flex-direction:column;gap:4px">' +
         '<h3 class="anton" id="sheet-title">' + esc(p.name) + '</h3>' +
-        '<span class="sub">' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + ' · from ' + esc(p.origin) + '</span>' +
+        '<span class="sub">' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + (p.origin ? ' · from ' + esc(p.origin) : '') + '</span>' +
         '<span class="pr num">' + (o.off ? '<s>' + rs(o.base) + '</s> ' : '') + rs(o.price) + ' per kg' + (o.off ? ' · ' + o.off + '% off' : '') +
-          (!showOpts && o.landed ? ' · ' + esc(o.landed) : '') + '</span>' +
+          (!showOpts && whereWhen(o) ? ' · ' + esc(whereWhen(o)) : '') + '</span>' +
         '<span class="sub" style="font-size:14px">Weighed whole, before cleaning.' + yieldTxt + '</span></div>' +
       opts +
       '<div style="display:flex;flex-direction:column;gap:8px"><span class="lab">Pack</span>' +
@@ -454,7 +470,7 @@
       '<div class="addrow"><div class="qty"><button class="press" data-act="qdec" aria-label="One less">−</button><span class="num">' + k.qty + '</span>' +
         '<button class="press" data-act="qinc" aria-label="One more">+</button></div>' +
         (kgOf(k.pack) * k.qty > left
-          ? '<button class="btn num" disabled>' + (left > 0 ? 'Only ' + fmtKg(left) + ' left' : 'Sold out') + '</button></div></div>'
+          ? '<button class="btn num" disabled>' + (left > 0 ? (p.showLeft === false ? 'Not enough left' : 'Only ' + fmtKg(left) + ' left') : 'Sold out') + '</button></div></div>'
           : '<button class="btn press num" data-act="add">Add to slip · ' + rs(o.price * kgOf(k.pack) * k.qty) + '</button></div></div>');
   }
   function findP(id) { return S.products.filter(function (p) { return p.id === id; })[0] || S.products[0]; }
@@ -547,7 +563,8 @@
         if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total, delivery: d.delivery }); return; }
         S.sending = false;
         if (d.error === 'stock') {
-          var msg = 'Some items ran short while you were ordering: ' + d.short.map(function (x) { return x.name + (x.size ? ' ' + x.size.toLowerCase() : '') + (x.left ? ' (only ' + fmtKg(x.left) + ' left)' : ' (sold out)'); }).join(', ') + '. Please change your slip and place the order again.';
+          var msg = 'Some items ran short while you were ordering: ' + d.short.map(function (x) { var hp = S.products.filter(function (q) { return q.name === x.name; })[0], hide = hp && hp.showLeft === false;
+            return x.name + (x.size ? ' ' + x.size.toLowerCase() : '') + (x.left ? (hide ? ' (not enough left)' : ' (only ' + fmtKg(x.left) + ' left)') : ' (sold out)'); }).join(', ') + '. Please change your slip and place the order again.';
           loadApi();
           S.short = msg;
         } else { S.errors = { server: true }; }
@@ -795,6 +812,8 @@
       case 'send': send(); break;
       case 'map': openMap(); break;
       case 'orders': e.preventDefault(); S.ordNote = ''; go('orders'); loadMyOrders(); break;
+      case 'reload': S.reloading = true; S.reloadErr = false; keepScroll(); loadApi(); break;
+      case 'ordreload': S.ordNote = ''; loadMyOrders(); break;
       case 'reorder': reorder(a.getAttribute('data-id')); break;
       case 'mapclose': closeMap(); break;
       case 'locate': locate(); break;

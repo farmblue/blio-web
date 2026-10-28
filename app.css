@@ -368,3 +368,16 @@ a{color:inherit}
 .aswitch{min-height:44px}
 .aswitch > span{font-size:15px;font-weight:600}
 .abody .agrid .btn{height:48px}
+.chead{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.chead .linkbtn,.chbox .linkbtn{color:var(--muted-g)}
+.chbox{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.linkbtn[disabled]{opacity:.6}
+.asize{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px dashed var(--paper-3)}
+.asize > b{font-size:15px}
+.agrid.g4{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.agrid.g4 .ainput{padding:0 8px}
+.agrid.g4 label span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.agrid.g4 input::-webkit-inner-spin-button,.agrid.g4 input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.agrid.g4 input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.crow{display:flex;align-items:center;justify-content:space-between;margin:-8px 0 8px;font-size:13px;color:var(--muted-g)}
+.crow .linkbtn{color:var(--muted-g);font-size:14px}
