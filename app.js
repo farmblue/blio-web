@@ -6,8 +6,8 @@
   var CONFIG = {
     whatsapp: '918856888766',          // order number, country code first, no +
     deliveryFee: 40,                   // Rs, home delivery
-    orderDays: [1, 3, 6],              // Monday, Wednesday, Saturday
-    openHour: 8, closeHour: 18,        // 8 AM to 6 PM, India time
+    // Used until the sheet loads. The sheet's Settings tab decides the real times.
+    schedule: { start: '17:00', end: '20:00', cutoff: '15:00' },
     // Web app URL of the Blio admin sheet's script. Leave empty to use the sample list in products.js.
     api: 'https://script.google.com/macros/s/AKfycbyYRFQbohQm2STP3hSZB6G3iq2kdop0Vw2XV3BN-cOfQev1-QHH16nxOgc57oWv1r8Y/exec'
   };
@@ -15,10 +15,10 @@
   var DELIVERY_APP = window.BLIO_MODE === 'delivery';
   if (!DELIVERY_APP && location.hash === '#delivery') { location.replace('/delivery/'); return; }
 
-  var DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  var GROUPS = ['Fish', 'Prawns', 'Crabs and clams', 'Dried'];
-  var GROUP_MR = { 'Fish': 'मासे', 'Prawns': 'कोळंबी', 'Crabs and clams': 'खेकडे, तिसऱ्या', 'Dried': 'सुकी मासळी' };
+  var CATS = [{ name: 'Fish', mr: 'मासे' }, { name: 'Prawns', mr: 'कोळंबी' }, { name: 'Crabs and clams', mr: 'खेकडे, तिसऱ्या' }, { name: 'Dried', mr: 'सुकी मासळी' }];
   var FIELD = { 'Fish': '#2456A6', 'Prawns': '#C2462A', 'Crabs and clams': '#2456A6', 'Dried': '#4E5C58' };
+  var DSHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MSHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var main = $('#main'), sheetEl = $('#sheet'), scrim = $('#scrim'), bar = $('#slipbar'), back = $('#back');
@@ -29,7 +29,7 @@
   function kgOf(p) { return p === '500 g' ? 0.5 : 1; }
 
   var S = {
-    products: (window.BLIO_PRODUCTS || []).slice(),
+    products: CONFIG.api ? [] : normP(window.BLIO_PRODUCTS), apiState: CONFIG.api ? 'loading' : 'ok',
     screen: 'home',
     openGroup: 'Fish',
     pick: null,                 // {id, pack, cut, qty}
@@ -38,6 +38,7 @@
     sending: false,
     short: null,
     live: false,
+    cats: CATS.slice(), plan: null, pending: false, apiAt: 0,
     errors: {},
     last: null,
     upi: '', payee: '',
@@ -46,55 +47,111 @@
     installDismissed: !!store(window.BLIO_MODE === 'delivery' ? 'installDismissedD' : 'installDismissed')
   };
 
-  // ---------- order window, always in India time ----------
+  // ---------- delivery plan, always in India time ----------
   function istNow() { var d = new Date(); return new Date(d.getTime() + (d.getTimezoneOffset() + 330) * 60000); }
-  function windowInfo() {
-    var now = istNow(), dow = now.getDay(), h = now.getHours();
-    if (CONFIG.orderDays.indexOf(dow) > -1 && h >= CONFIG.openHour && h < CONFIG.closeHour) {
-      var close = new Date(now); close.setHours(CONFIG.closeHour, 0, 0, 0);
-      var mins = Math.max(1, Math.ceil((close - now) / 60000));
-      return {
-        open: true, day: DAYS[dow], delivery: DAYS[(dow + 1) % 7],
-        left: (Math.floor(mins / 60) ? Math.floor(mins / 60) + 'h ' : '') + (mins % 60) + 'm',
-        line: 'Orders close at 6 PM today. Everything is bought fresh against your order.',
-        cta: 'Orders close at 6 PM today. Pick your fish and place the order.'
-      };
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function addDays(ds, n) { var p = ds.split('-'); return ymd(new Date(+p[0], +p[1] - 1, +p[2] + n)); }
+  function minOf(hm) { var m = String(hm || '').match(/^(\d{1,2}):(\d{2})$/); return m ? +m[1] * 60 + +m[2] : 0; }
+  function fmtT(hm) { var m = minOf(hm), h = Math.floor(m / 60), mm = m % 60; return (h % 12 || 12) + (mm ? ':' + pad(mm) : '') + (h >= 12 ? ' PM' : ' AM'); }
+  function sched() { return S.sched || CONFIG.schedule; }
+  function range() {
+    var a = fmtT(sched().start), b = fmtT(sched().end);
+    if (a.slice(-2) === b.slice(-2)) { a = a.slice(0, -3); }
+    return a + ' to ' + b;
+  }
+  function dayWord(ds) {
+    var today = ymd(istNow());
+    if (ds === today) { return 'today'; }
+    if (ds === addDays(today, 1)) { return 'tomorrow'; }
+    var p = String(ds).split('-'); if (p.length !== 3) { return String(ds || ''); }
+    return DSHORT[new Date(+p[0], +p[1] - 1, +p[2]).getDay()] + ' ' + (+p[2]) + ' ' + MSHORT[+p[1] - 1];
+  }
+  function evening(ds) { var w = dayWord(ds); return w === 'today' ? 'this evening' : w === 'tomorrow' ? 'tomorrow evening' : w; }
+  function plan() {
+    var now = istNow(), today = ymd(now), mins = now.getHours() * 60 + now.getMinutes(), cut = minOf(sched().cutoff);
+    var same = mins < cut;
+    return { date: same ? today : addDays(today, 1), sameDay: same, minsLeft: cut - mins };
+  }
+  function info() {
+    var p = plan(), cut = fmtT(sched().cutoff), ev = evening(p.date), has = S.products.length > 0;
+    var left = has && p.sameDay ? (Math.floor(p.minsLeft / 60) ? Math.floor(p.minsLeft / 60) + 'h ' : '') + (p.minsLeft % 60) + 'm' : '';
+    var base = { delivery: ev, date: p.date, left: left };
+    if (!has && S.apiState !== 'ok') {
+      return Object.assign(base, S.apiState === 'loading'
+        ? { title: 'Loading<br>the catch', line: 'Getting today’s fish and prices…', cta: 'Getting today’s catch.' }
+        : { title: 'No<br>connection', line: 'We couldn’t load the catch. Check your internet and open Blio again, or order on WhatsApp.', cta: 'Order on WhatsApp instead.' });
     }
-    for (var i = 0; i < 8; i++) {
-      var d = new Date(now); d.setDate(now.getDate() + i); d.setHours(CONFIG.openHour, 0, 0, 0);
-      if (CONFIG.orderDays.indexOf(d.getDay()) > -1 && d > now) {
-        var when = i === 0 ? 'today' : (i === 1 ? 'tomorrow' : DAYS[d.getDay()]);
-        return {
-          open: false, day: DAYS[d.getDay()], delivery: DAYS[(d.getDay() + 1) % 7], left: '',
-          line: 'The next order window opens ' + when + ' at 8 AM. You can place your order now and it joins that window.',
-          cta: 'Next window opens ' + when + ' at 8 AM. Place your order now to hold your place.'
-        };
-      }
+    if (!has && S.pending) {
+      return Object.assign(base, { title: 'Catch<br>coming in', line: 'Today’s fish is being weighed and sorted by size. The list opens here shortly.',
+        cta: 'The catch is being weighed. Check back in a few minutes.' });
     }
-    return { open: false, day: 'Next', delivery: 'the next day', left: '', line: '', cta: '' };
+    if (!has) {
+      return Object.assign(base, { title: 'Next catch<br>soon', line: 'Nothing on sale right now. We buy at the morning auction on sourcing days and list the fish here once it reaches Kolhapur.',
+        cta: 'Looking for a particular fish? Ask us and we’ll tell you when it comes in.' });
+    }
+    if (p.sameDay) {
+      return Object.assign(base, { title: 'Today’s<br>catch', line: 'Order by ' + cut + ' and it reaches you this evening, ' + range() + '.',
+        cta: 'Order by ' + cut + ' for delivery this evening, ' + range() + '.' });
+    }
+    return Object.assign(base, { title: 'Fresh<br>catch', line: 'Same-day orders closed at ' + cut + '. Order now and it reaches you ' + ev + ', ' + range() + '.',
+      cta: 'Order now for delivery ' + ev + ', ' + range() + '.' });
   }
 
   // ---------- products from the admin sheet ----------
+  function normP(list) {
+    return (list || []).map(function (p) {
+      if (p.options && p.options.length) { return p; }
+      return Object.assign({}, p, { options: [{ key: '', size: '', price: p.price, base: p.price, off: 0, landed: '', left: p.left === undefined ? null : p.left }] });
+    });
+  }
   function applyApi(d) {
-    if (!d || !d.products || !d.products.length) { return false; }
-    S.products = d.products; S.live = true;
+    if (!d || !d.products) { return false; }
+    if (!d.mode && !d.products.length) { return false; }   // older script with an empty list: keep the built-in one
+    S.products = normP(d.products); S.live = true; S.apiState = 'ok';
+    S.pending = !!d.pending; S.plan = d.plan || null;
+    if (d.schedule && d.schedule.cutoff) { S.sched = d.schedule; }
+    if (d.categories && d.categories.length) { S.cats = d.categories; }
     if (typeof d.deliveryFee === 'number') { CONFIG.deliveryFee = d.deliveryFee; }
     if (d.upi !== undefined) { S.upi = d.upi || ''; S.payee = d.payee || ''; }
+    syncCart();
     return true;
   }
   function loadApi() {
     if (!CONFIG.api) { return; }
-    var cached = store('api'); if (applyApi(cached)) { render(false); }
+    var cached = store('api');
+    if (cached && cached._at && Date.now() - cached._at < 3 * 3600000 && applyApi(cached)) { render(false); }
+    S.apiAt = Date.now();
     fetch(CONFIG.api, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
-      if (applyApi(d)) { store('api', d); if (S.screen === 'home' || S.screen === 'pay') { keepScroll(); } }
-    }).catch(function () { /* keep cached or built-in list */ });
+      if (applyApi(d)) { d._at = Date.now(); store('api', d); if (S.screen === 'home' || S.screen === 'pay' || S.screen === 'slip') { keepScroll(); } }
+    }).catch(function () { if (S.apiState === 'loading') { S.apiState = 'error'; if (S.screen === 'home') { keepScroll(); } } });
   }
   function keepScroll() { var st = main.scrollTop; render(false); main.scrollTop = st; }
-  function kgLeft(p) {
-    if (!p.available) { return 0; }
-    if (p.left === null || p.left === undefined) { return Infinity; }
-    var inCart = S.cart.filter(function (l) { return l.id === p.id; }).reduce(function (a, l) { return a + kgOf(l.pack) * l.qty; }, 0);
-    return Math.max(0, p.left - inCart);
+  function optOf(p, key) { return (p.options || []).filter(function (o) { return o.key === key; })[0]; }
+  function kgLeft(p, key) {
+    var o = optOf(p, key); if (!o || !p.available) { return 0; }
+    if (o.left === null || o.left === undefined) { return Infinity; }
+    var inCart = S.cart.filter(function (l) { return l.id === p.id && l.opt === key; }).reduce(function (a, l) { return a + kgOf(l.pack) * l.qty; }, 0);
+    return Math.max(0, o.left - inCart);
+  }
+  function lineKey(p, o, pack, cut) { return p.id + '|' + o.key + '|' + pack + '|' + cut; }
+  // Re-price the slip against the latest catch. Sizes that sold out or ended are taken off with a note.
+  function syncCart() {
+    var dropped = [], byKey = {};
+    S.cart = S.cart.filter(function (l) {
+      var p = S.products.filter(function (x) { return x.name === l.name; })[0];
+      var o = p && (optOf(p, l.opt) || p.options.filter(function (x) { return x.size === (l.size || ''); })[0]);
+      if (!o) { dropped.push(l.name + (l.size ? ' (' + l.size + ')' : '')); return false; }
+      l.id = p.id; l.opt = o.key; l.size = o.size; l.price = o.price; l.key = lineKey(p, o, l.pack, l.cut);
+      if (byKey[l.key]) { byKey[l.key].qty += l.qty; return false; }
+      byKey[l.key] = l; return true;
+    });
+    if (dropped.length) { S.short = (S.short ? S.short + ' ' : '') + 'No longer available, so taken off your slip: ' + dropped.join(', ') + '.'; }
+    saveCart();
+  }
+  function lineLabel(l) { return (l.size ? l.size + ' · ' : '') + l.pack + ' · ' + l.cut; }
+  function reqUrl(name) {
+    return 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent('Hi Blio, I would like to request ' + (name || 'a fish') + '. Quantity: ');
   }
   function fmtKg(n) { return (Math.round(n * 10) / 10).toString().replace(/\.0$/, '') + ' kg'; }
 
@@ -118,53 +175,74 @@
   var PLUS = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#ECE6D6" stroke-width="2" aria-hidden="true"><path d="M9 2v14M2 9h14"/></svg>';
 
   // ---------- screens ----------
+  function catList() {
+    var cats = S.cats.slice(), seen = {};
+    cats.forEach(function (c) { seen[c.name] = 1; });
+    S.products.forEach(function (p) { if (!seen[p.group]) { seen[p.group] = 1; cats.push({ name: p.group, mr: '' }); } });
+    return cats;
+  }
+  function offOf(p) { return Math.max.apply(null, p.options.map(function (o) { return o.off || 0; })); }
   function homeHtml(anim) {
-    var w = windowInfo();
-    var groups = GROUPS.map(function (g) {
-      var items = S.products.filter(function (p) { return p.group === g; });
+    var w = info(), cats = catList();
+    if (S.products.length && !S.groupTouched && !S.products.some(function (p) { return p.group === S.openGroup; })) {
+      var first = cats.filter(function (c) { return S.products.some(function (p) { return p.group === c.name; }); })[0];
+      S.openGroup = first ? first.name : '';
+    }
+    var groups = cats.map(function (c) {
+      var g = c.name, items = S.products.filter(function (p) { return p.group === g; });
       if (!items.length) { return ''; }
       var open = S.openGroup === g;
       var rows = open ? '<div class="items">' + items.map(function (p, i) {
-        var out = !p.available || p.left === 0, low = !out && p.left !== null && p.left !== undefined && p.left <= 5;
+        var left = p.options.reduce(function (a, o) { return a + (o.left === null || o.left === undefined ? Infinity : o.left); }, 0);
+        var out = !p.available || left <= 0, low = !out && left !== Infinity && left <= 5, off = offOf(p);
+        var minP = Math.min.apply(null, p.options.map(function (o) { return o.price; }));
+        var sizes = p.options.map(function (o) { return o.size; }).filter(Boolean);
         return '<button class="row item enter' + (out ? ' out' : '') + '" data-act="item" data-id="' + esc(p.id) + '" style="animation-delay:' + (i * 40) + 'ms"' + (out ? ' aria-disabled="true"' : '') + '>' +
           '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + '</span>' +
-          (low ? '<span class="low">Only ' + fmtKg(p.left) + ' left</span>' : '') + '</span>' +
-          '<span class="p num">' + (out ? 'Sold out' : rs(p.price) + '/kg') + '</span></button>';
+          (sizes.length > 1 ? '<span>' + sizes.length + ' sizes</span>' : sizes.length ? '<span>' + esc(sizes[0]) + '</span>' : '') +
+          (low || off ? '<span class="tags">' + (off ? '<span class="off">' + off + '% off</span>' : '') + (low ? '<span class="low">Only ' + fmtKg(left) + ' left</span>' : '') + '</span>' : '') + '</span>' +
+          '<span class="p num">' + (out ? 'Sold out' : (p.options.length > 1 ? '<small>from</small> ' : '') + rs(minP) + '/kg') + '</span></button>';
       }).join('') + '</div>' : '';
       return '<div class="group"><button class="row g-head" data-act="group" data-g="' + esc(g) + '" aria-expanded="' + open + '">' +
-        '<span class="lbl">' + esc(g) + '</span><span class="mr">' + GROUP_MR[g] + '</span><span class="n num">' + items.length + '</span>' + PLUS + '</button>' + rows + '</div>';
+        '<span class="lbl">' + esc(g) + '</span><span class="mr">' + esc(c.mr || '') + '</span><span class="n num">' + items.length + '</span>' + PLUS + '</button>' + rows + '</div>';
     }).join('');
+    var has = S.products.length > 0, s = sched();
 
     return '<div class="wrap home' + (anim ? ' enter' : '') + '">' +
       '<div class="ticket"><div class="in">' +
-        '<h1 class="anton">' + esc(w.day) + '’s<br>catch</h1>' +
+        '<h1 class="anton">' + w.title + '</h1>' +
         '<p>' + esc(w.line) + '</p>' +
-        (w.open ? '<div class="count"><b class="num" id="left">' + w.left + '</b><span>left to order</span></div>' : '') +
-        '<a class="btn press" href="#catch" data-act="tocatch">Choose from the catch</a>' +
+        (w.left ? '<div class="count"><b class="num" id="left">' + w.left + '</b><span>left for same-day delivery</span></div>' : '') +
+        (has ? '<a class="btn press" href="#catch" data-act="tocatch">Choose from the catch</a>'
+             : '<a class="btn press" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener">Request a fish on WhatsApp</a>') +
       '</div><div class="perf"></div>' +
       '<span class="notch" style="left:-13px;bottom:82px"></span><span class="notch" style="right:-13px;bottom:82px"></span>' +
-      '<div class="facts"><span><small>Delivered</small><strong>' + esc(w.delivery) + ', 5 to 9 PM</strong></span>' +
-      '<span><small>Bought from</small><strong>Goa and Konkan boats</strong></span></div></div>' +
+      '<div class="facts"><span><small>Delivered</small><strong>' + (has ? esc(cap(w.delivery)) + ', ' + range() : 'Same evening if you order by ' + fmtT(s.cutoff)) + '</strong></span>' +
+      '<span><small>Bought at</small><strong>The morning auction, Goa and Konkan</strong></span></div></div>' +
       installHtml() +
-      '<section class="catch" id="catch"><h2 class="anton">Catch</h2>' +
-      '<p class="lead">Priced per kg. Every fish is cleaned and cut in Kolhapur the morning it arrives.</p>' +
-      '<div class="groups">' + groups + '</div></section>' +
+      (has ? '<section class="catch" id="catch"><h2 class="anton">Catch</h2>' +
+        '<p class="lead">Priced per kg, weighed whole before cleaning. Cleaned and cut by hand in Kolhapur.</p>' +
+        '<div class="groups">' + groups + '</div>' +
+        '<a class="reqlink" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener"><b>Don’t see your fish?</b><span>Request it on WhatsApp and we’ll look for it at the next auction.</span></a></section>'
+        : (S.pending ? '<div class="box" style="margin-top:24px">This page checks for the catch every minute.</div>' : '')) +
       '<section class="how"><h2 class="anton">Boat to door</h2><div class="rail-bar"><span id="railbar"></span></div>' +
       '<div class="rail" id="rail">' +
-        step('You order by 6 PM', 'Pick the fish, the pack size and the cut, then confirm on WhatsApp.', 32, '#2456A6', '<svg width="170" height="170" viewBox="0 0 170 170" aria-hidden="true"><circle cx="85" cy="85" r="72" fill="#ECE6D6"/><circle cx="85" cy="85" r="6" fill="#12272C"/><rect x="82" y="34" width="6" height="54" fill="#12272C"/><rect x="82" y="82" width="40" height="6" fill="#C2462A"/></svg>') +
-        step('We buy from the boats', 'Only what was ordered, straight from fishermen in North Goa and on the Konkan coast.', 64, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
+        step('Bought at the auction', 'Early morning at the harbour, from boats in North Goa and on the Konkan coast.', 32, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
+        step('You order by ' + fmtT(s.cutoff), 'Pick the fish, size, pack and cut. Orders after ' + fmtT(s.cutoff) + ' go out the next evening.', 64, '#2456A6', '<svg width="170" height="170" viewBox="0 0 170 170" aria-hidden="true"><circle cx="85" cy="85" r="72" fill="#ECE6D6"/><circle cx="85" cy="85" r="6" fill="#12272C"/><rect x="82" y="34" width="6" height="54" fill="#12272C"/><rect x="82" y="82" width="40" height="6" fill="#C2462A"/></svg>') +
         step('Cleaned to your cut', 'Whole, curry cut, steaks or fillet, done by hand in Kolhapur.', 40, '#ECE6D6', '<svg width="220" height="120" viewBox="0 0 220 120" aria-hidden="true"><path d="M14 60C56 14 140 14 176 60C140 106 56 106 14 60Z" fill="#2456A6"/><path d="M172 60l38-30v60z" fill="#2456A6"/><circle cx="46" cy="54" r="6" fill="#ECE6D6"/><rect x="84" y="20" width="6" height="80" fill="#ECE6D6"/><rect x="112" y="22" width="6" height="76" fill="#ECE6D6"/><rect x="140" y="30" width="6" height="60" fill="#ECE6D6"/></svg>') +
-        step('At your door by 9 PM', 'Next evening, packed on ice and brought to your door.', 52, '#195360', '<svg width="180" height="180" viewBox="0 0 180 180" aria-hidden="true"><path d="M20 84L90 26l70 58v80H20z" fill="#ECE6D6"/><rect x="72" y="108" width="36" height="56" fill="#C2462A"/><rect x="38" y="98" width="24" height="24" fill="#2456A6"/><rect x="118" y="98" width="24" height="24" fill="#2456A6"/></svg>') +
+        step('At your door by ' + fmtT(s.end), 'Packed on ice and brought to your door, ' + range() + '.', 52, '#195360', '<svg width="180" height="180" viewBox="0 0 180 180" aria-hidden="true"><path d="M20 84L90 26l70 58v80H20z" fill="#ECE6D6"/><rect x="72" y="108" width="36" height="56" fill="#C2462A"/><rect x="38" y="98" width="24" height="24" fill="#2456A6"/><rect x="118" y="98" width="24" height="24" fill="#2456A6"/></svg>') +
       '</div></section>' +
-      '<a class="cta press" href="#catch" data-act="tocatch"><span class="l">' + esc(w.cta) + '</span>' +
+      (has ? '<a class="cta press" href="#catch" data-act="tocatch">' : '<a class="cta press" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener">') +
+        '<span class="l">' + esc(w.cta) + '</span>' +
         '<svg width="36" height="36" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M9 27L27 9M12 9h15v15"/></svg>' +
-        '<span class="big anton">Order</span></a>' +
+        '<span class="big anton">' + (has ? 'Order' : 'Ask us') + '</span></a>' +
       '<footer class="foot"><img src="/icons/wordmark.svg" alt="Blio" width="180" height="90">' +
         '<p>Questions or a special order? WhatsApp <a href="https://wa.me/' + CONFIG.whatsapp + '">+91 88568 88766</a>.</p>' +
         '<p>Blio is a brand of Farmblue Agrotech Private Limited, House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra. <a href="https://farmblue.in">farmblue.in</a></p>' +
-        '<small>Prices are per kg and change with the catch. The final bill is confirmed on WhatsApp before you pay.</small>' +
+        '<small>Prices are per kg of whole fish and change with each catch. The final bill is confirmed on WhatsApp before you pay.</small>' +
       '</footer></div>';
   }
+  function cap(t) { t = String(t || ''); return t.charAt(0).toUpperCase() + t.slice(1); }
   function step(t, d, mt, bg, svg) {
     return '<div class="step"><b>' + t + '</b><span>' + d + '</span><div class="art" style="margin-top:' + mt + 'px;background:' + bg + '">' + svg + '</div></div>';
   }
@@ -187,7 +265,7 @@
   }
 
   function slipHtml(anim) {
-    var w = windowInfo(), t = totals(), f = S.form, e = S.errors;
+    var w = info(), t = totals(), f = S.form, e = S.errors;
     if (!S.cart.length) {
       return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="ticket"><div class="in">' +
         '<h1 class="anton" style="font-size:52px;line-height:.9">Empty slip</h1>' +
@@ -198,7 +276,7 @@
     for (i = 0; i <= teeth; i++) { pts.push((i / teeth * 100).toFixed(2) + '% ' + (i % 2 ? '0px' : '8px')); }
     for (i = teeth; i >= 0; i--) { pts.push((i / teeth * 100).toFixed(2) + '% ' + (i % 2 ? '100%' : 'calc(100% - 8px)')); }
     var lines = S.cart.map(function (l, idx) {
-      return '<div class="line"><div class="a"><span class="t"><b>' + esc(l.name) + '</b><small>' + esc(l.pack) + ' · ' + esc(l.cut) + '</small></span>' +
+      return '<div class="line"><div class="a"><span class="t"><b>' + esc(l.name) + '</b><small>' + esc(lineLabel(l)) + '</small></span>' +
         '<span class="tot num">' + rs(l.price * kgOf(l.pack) * l.qty) + '</span></div>' +
         '<div class="b"><div class="qty"><button class="press" data-act="ldec" data-i="' + idx + '" aria-label="One less">−</button><span class="num">' + l.qty + '</span>' +
         '<button class="press" data-act="linc" data-i="' + idx + '" aria-label="One more">+</button></div>' +
@@ -207,12 +285,12 @@
     var del = f.fulfil === 'delivery';
     return '<div class="stack' + (anim ? ' enter' : '') + '">' +
       '<div class="slip" style="clip-path:polygon(' + pts.join(',') + ')">' +
-        '<div class="hd"><h1 class="anton">Your slip</h1><span>For ' + esc(w.day) + '’s window · delivered ' + esc(w.delivery) + ', 5 to 9 PM</span></div>' +
+        '<div class="hd"><h1 class="anton">Your slip</h1><span>Delivered ' + esc(w.delivery) + ', ' + range() + '</span></div>' +
         '<div class="lines">' + lines + '</div><div class="perf" style="margin:4px 22px 0"></div>' +
         '<div class="sums"><div><span>Subtotal</span><span class="num">' + rs(t.sub) + '</span></div>' +
         '<div class="m"><span>Delivery</span><span class="num">' + (t.fee ? rs(t.fee) : 'Free') + '</span></div>' +
         '<div class="t"><span>Estimated total</span><b class="num">' + rs(t.total) + '</b></div>' +
-        '<span class="note">Fish is weighed after cleaning, so we confirm the final bill on WhatsApp before you pay.</span></div>' +
+        '<span class="note">Packs are weighed whole, before cleaning. Fish don’t come in exact weights, so we confirm the final bill on WhatsApp before you pay.</span></div>' +
       '</div>' +
       '<div class="fld"><label for="f-name">Your name</label><input id="f-name" data-f="name" autocomplete="name" value="' + esc(f.name) + '" placeholder="Name for the order">' +
         (e.name ? '<span class="err">Please add your name.</span>' : '') + '</div>' +
@@ -230,7 +308,7 @@
           (f.lat ? '<div class="pinned"><span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="2"/></svg> Pinned on the map</span><button class="linkbtn" data-act="map">Change</button></div>'
                  : '<button class="btn dark press" data-act="map">Pin your location on the map</button>') +
           '<span class="hint">Optional, but it helps our delivery person find your door.</span></div>'
-        : '<div class="box">Collect from the Blio cleaning point in Kolhapur, ' + esc(w.delivery) + ', 5 to 9 PM. We share the exact location on WhatsApp.</div>') +
+        : '<div class="box">Collect from the Blio cleaning point in Kolhapur, ' + esc(w.delivery) + ', ' + range() + '. We share the exact location on WhatsApp.</div>') +
       '<div class="fld"><label for="f-notes">Notes (optional)</label><input id="f-notes" data-f="notes" placeholder="Cleaning preferences, timing" value="' + esc(f.notes) + '"></div>' +
       (S.short ? '<div class="box warn" role="alert">' + esc(S.short) + '</div>' : '') +
       (e.server ? '<div class="box warn" role="alert">We couldn’t place the order. Check your internet connection and try again.</div>' : '') +
@@ -246,7 +324,7 @@
       '<p>Order ' + esc(o.id) + ' for ' + rs(o.total || 0) + '. One last step: send it to us on WhatsApp so we can confirm the bill and share the UPI request.</p>' +
       '<a class="btn big press" href="' + esc(o.url) + '" target="_blank" rel="noopener">Send on WhatsApp</a></div>' +
       '<div class="perf"></div><div style="padding:18px 22px 24px;display:flex;flex-direction:column;gap:12px">' +
-      '<span class="note">Delivered ' + esc(o.delivery) + ', 5 to 9 PM</span>' +
+      '<span class="note">Delivered ' + esc(o.delivery) + ', ' + range() + '</span>' +
       progressHtml(0) + '</div></div>' +
       '<button class="btn dark press" data-act="orders">Track this order</button>' +
       '<button class="btn dark press" data-act="home">Back to the catch</button></div>';
@@ -289,20 +367,20 @@
     var when = new Date(o.placedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     var text = {
       'New': 'Placed. We confirm it on WhatsApp with the final bill.',
-      'Confirmed': 'Confirmed. Your fish is bought and cleaned for ' + (o.delivery || 'delivery') + ' evening.',
+      'Confirmed': 'Confirmed. Your fish is set aside and cleaned for delivery ' + (o.dDate ? evening(o.dDate) : (o.delivery || '') + ' evening') + '.',
       'Packed': 'Packed and ready. It leaves for delivery soon.',
-      'Out for delivery': 'Out for delivery' + (o.outAt ? ' since ' + timeOf(o.outAt) : '') + '. Arriving between 5 and 9 PM.',
+      'Out for delivery': 'Out for delivery' + (o.outAt ? ' since ' + timeOf(o.outAt) : '') + '. Arriving ' + range() + '.',
       'Arriving next': 'You’re next. Arriving in about 15 minutes.',
       'Delivered': 'Delivered' + (o.deliveredAt ? ' at ' + timeOf(o.deliveredAt) : '') + '.',
       'Cancelled': 'This order was cancelled.'
     }[st] || st;
     var onWay = st === 'Out for delivery' || st === 'Arriving next';
     var payTag = st === 'New' || st === 'Cancelled' ? '' : (paid ? '<span class="ptag paid">Paid</span>' : '<span class="ptag">Not paid yet</span>');
-    var items = (o.lines || []).map(function (l) { return esc(l.name) + ' ' + esc(l.pack) + (l.qty > 1 ? ' x' + l.qty : ''); }).join(', ');
+    var items = (o.lines || []).map(function (l) { return esc(l.name) + (l.size ? ' (' + esc(l.size.toLowerCase()) + ')' : '') + ' ' + esc(l.pack) + (l.qty > 1 ? ' x' + l.qty : ''); }).join(', ');
     var canPay = !paid && S.upi && ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next'].indexOf(st) > -1;
     return '<div class="ocard' + (st === 'Cancelled' ? ' cancelled' : '') + (st === 'Arriving next' ? ' next' : '') + '">' +
       '<div class="dtop"><b>' + esc(o.id) + '</b><span class="num">' + rs(amount) + '</span></div>' +
-      '<span class="dsub">' + when + (o.day ? ' · ' + esc(o.day) + '’s window' : '') + payTag + '</span>' +
+      '<span class="dsub">' + when + ' · for ' + esc(o.dDate ? dLabel(o.dDate) : (o.delivery || '')) + payTag + '</span>' +
       '<p class="ditems">' + items + '</p>' +
       '<p class="ostat">' + esc(text) + '</p>' + (st === 'Cancelled' ? '' : progressHtml(STEP_OF[st])) +
       '<div class="obtns">' +
@@ -331,27 +409,41 @@
     var added = 0, missed = [];
     (o.lines || []).forEach(function (l) {
       var p = S.products.filter(function (x) { return x.name === l.name; })[0];
-      if (!p || !p.available || kgOf(l.pack) * l.qty > kgLeft(p)) { missed.push(l.name); return; }
-      var cut = p.cuts.indexOf(l.cut) > -1 ? l.cut : p.cuts[0], key = p.id + '|' + l.pack + '|' + cut;
+      var need = kgOf(l.pack) * l.qty, opts = p && p.available ? p.options.filter(function (x) { return kgLeft(p, x.key) >= need; }) : [];
+      var op = opts.filter(function (x) { return x.size === (l.size || ''); })[0] || opts[0];
+      if (!op) { missed.push(l.name + (l.size ? ' (' + l.size.toLowerCase() + ')' : '')); return; }
+      var cut = p.cuts.indexOf(l.cut) > -1 ? l.cut : p.cuts[0], key = lineKey(p, op, l.pack, cut);
       var hit = S.cart.filter(function (c) { return c.key === key; })[0];
-      if (hit) { hit.qty += l.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, pack: l.pack, cut: cut, qty: l.qty, price: p.price }); }
+      if (hit) { hit.qty += l.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, opt: op.key, size: op.size, pack: l.pack, cut: cut, qty: l.qty, price: op.price }); }
       added++;
     });
     saveCart();
     if (!added) { S.ordNote = 'None of these items are available right now.'; keepScroll(); return; }
     S.ordNote = '';
     go('slip');
-    if (missed.length) { S.short = 'Not available right now, so left out: ' + missed.join(', ') + '. Prices are today’s.'; keepScroll(); }
+    if (missed.length) { S.short = 'Not available right now, so left out: ' + missed.join(', ') + '. Prices and sizes are from today’s catch.'; keepScroll(); }
   }
 
   // ---------- sheet ----------
   function sheetHtml() {
-    var p = findP(S.pick.id), k = S.pick;
-    return '<div class="grab" id="grab"><span class="h"></span><div class="field" style="background:' + FIELD[p.group] + '">' + ART[p.group] + '</div></div>' +
+    var p = findP(S.pick.id), k = S.pick, o = optOf(p, k.opt) || p.options[0], left = kgLeft(p, o.key);
+    var showOpts = p.options.length > 1 || !!o.size;
+    var opts = showOpts ? '<div style="display:flex;flex-direction:column;gap:8px"><span class="lab">Size</span><div class="opts">' +
+      p.options.map(function (x) {
+        var l = kgLeft(p, x.key), out = l <= 0;
+        return '<button class="opt press" data-act="opt" data-v="' + esc(x.key) + '" aria-pressed="' + (x.key === o.key) + '"' + (out ? ' disabled' : '') + '>' +
+          '<span class="ol"><b>' + esc(x.size || 'Standard') + '</b><small>' + [x.landed, out ? 'Sold out' : l === Infinity ? '' : fmtKg(l) + ' left'].filter(Boolean).map(esc).join(' · ') + '</small></span>' +
+          '<span class="or num">' + (x.off ? '<s>' + rs(x.base) + '</s>' : '') + rs(x.price) + '<small>/kg</small></span></button>';
+      }).join('') + '</div></div>' : '';
+    var yieldTxt = p.yieldPct > 0 && p.yieldPct < 100 ? ' 1 kg gives about ' + Math.round(p.yieldPct * 10) + ' g after cleaning.' : '';
+    return '<div class="grab" id="grab"><span class="h"></span><div class="field" style="background:' + (FIELD[p.group] || '#2456A6') + '">' + (ART[p.group] || ART.Fish) + '</div></div>' +
       '<div class="body"><div style="display:flex;flex-direction:column;gap:4px">' +
         '<h3 class="anton" id="sheet-title">' + esc(p.name) + '</h3>' +
         '<span class="sub">' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + ' · from ' + esc(p.origin) + '</span>' +
-        '<span class="pr num">' + rs(p.price) + ' per kg</span></div>' +
+        '<span class="pr num">' + (o.off ? '<s>' + rs(o.base) + '</s> ' : '') + rs(o.price) + ' per kg' + (o.off ? ' · ' + o.off + '% off' : '') +
+          (!showOpts && o.landed ? ' · ' + esc(o.landed) : '') + '</span>' +
+        '<span class="sub" style="font-size:14px">Weighed whole, before cleaning.' + yieldTxt + '</span></div>' +
+      opts +
       '<div style="display:flex;flex-direction:column;gap:8px"><span class="lab">Pack</span>' +
         '<div class="seg" data-on="' + (k.pack === '1 kg' ? 1 : 0) + '"><span class="ind"></span>' +
         '<button data-act="pack" data-v="500 g" aria-pressed="' + (k.pack === '500 g') + '">500 g</button>' +
@@ -361,14 +453,15 @@
       '</div></div>' +
       '<div class="addrow"><div class="qty"><button class="press" data-act="qdec" aria-label="One less">−</button><span class="num">' + k.qty + '</span>' +
         '<button class="press" data-act="qinc" aria-label="One more">+</button></div>' +
-        (kgOf(k.pack) * k.qty > kgLeft(p)
-          ? '<button class="btn num" disabled>Only ' + fmtKg(kgLeft(p)) + ' left</button></div></div>'
-          : '<button class="btn press num" data-act="add">Add to slip · ' + rs(p.price * kgOf(k.pack) * k.qty) + '</button></div></div>');
+        (kgOf(k.pack) * k.qty > left
+          ? '<button class="btn num" disabled>' + (left > 0 ? 'Only ' + fmtKg(left) + ' left' : 'Sold out') + '</button></div></div>'
+          : '<button class="btn press num" data-act="add">Add to slip · ' + rs(o.price * kgOf(k.pack) * k.qty) + '</button></div></div>');
   }
   function findP(id) { return S.products.filter(function (p) { return p.id === id; })[0] || S.products[0]; }
   function openSheet(id) {
-    var p = findP(id); if (!p || kgLeft(p) <= 0 && p.left !== null && p.left !== undefined || !p.available) { return; }
-    S.pick = { id: p.id, pack: '1 kg', cut: p.cuts[0], qty: 1 };
+    var p = S.products.filter(function (x) { return x.id === id; })[0]; if (!p || !p.available) { return; }
+    var o = p.options.filter(function (x) { return kgLeft(p, x.key) > 0; })[0]; if (!o) { return; }
+    S.pick = { id: p.id, opt: o.key, pack: kgLeft(p, o.key) >= 1 ? '1 kg' : '500 g', cut: p.cuts[0], qty: 1 };
     sheetEl.innerHTML = sheetHtml(); sheetEl.setAttribute('aria-label', p.name);
     sheetEl.scrollTop = 0; sheetEl.classList.add('show'); scrim.classList.add('show');
     bindDrag();
@@ -405,9 +498,13 @@
     var n = istNow();
     return 'BL' + String(n.getDate()).padStart(2, '0') + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(Math.floor(100 + Math.random() * 900));
   }
-  function waText(o, f, w) {
-    var msg = ['Blio order ' + o.id, 'For ' + w.day + '’s window, delivery ' + w.delivery + ' 5 to 9 PM', ''];
-    o.lines.forEach(function (l, i) { msg.push((i + 1) + '. ' + l.name + ', ' + l.pack + ', ' + l.cut + ' x' + l.qty + ' = ' + rs(l.total)); });
+  function dLabel(ds) {
+    var p = String(ds || '').split('-'); if (p.length !== 3) { return String(ds || ''); }
+    return DSHORT[new Date(+p[0], +p[1] - 1, +p[2]).getDay()] + ' ' + (+p[2]) + ' ' + MSHORT[+p[1] - 1];
+  }
+  function waText(o, f) {
+    var msg = ['Blio order ' + o.id, 'Delivery: ' + dLabel(o.dDate) + ', ' + range(), ''];
+    o.lines.forEach(function (l, i) { msg.push((i + 1) + '. ' + l.name + (l.size ? ' (' + l.size + ')' : '') + ', ' + l.pack + ', ' + l.cut + ' x' + l.qty + ' = ' + rs(l.total)); });
     msg.push('', 'Subtotal: ' + rs(o.subtotal), 'Delivery: ' + rs(o.fee), 'Estimated total: ' + rs(o.total), '');
     msg.push('Name: ' + f.name.trim(), 'Mobile: ' + f.phone);
     msg.push('Address: ' + f.address.trim().replace(/\s*\n\s*/g, ', ') + (f.area.trim() ? ', ' + f.area.trim() : ''));
@@ -417,10 +514,11 @@
     return msg.join('\n');
   }
   function finish(o) {
-    var w = windowInfo(), f = S.form;
-    o.url = 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(waText(o, f, w));
-    o.delivery = w.delivery;
-    S.myorders.unshift({ id: o.id, token: o.token || '', placedAt: Date.now(), day: w.day, delivery: w.delivery,
+    var f = S.form;
+    o.dDate = (o.delivery && o.delivery.date) || plan().date;
+    o.url = 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(waText(o, f));
+    o.delivery = evening(o.dDate);
+    S.myorders.unshift({ id: o.id, token: o.token || '', placedAt: Date.now(), dDate: o.dDate,
       lines: o.lines, total: o.total, final: '', status: 'New', bill: '' });
     S.myorders = S.myorders.slice(0, 50); store('myorders', S.myorders);
     S.last = o; S.cart = []; saveCart(); S.form.notes = ''; saveForm(); S.sending = false; S.short = null;
@@ -435,7 +533,7 @@
     if (!f.address.trim()) { e.address = true; }
     S.errors = e; S.short = null;
     if (e.name || e.phone || e.address) { keepScroll(); var el = $(e.name ? '#f-name' : e.phone ? '#f-phone' : '#f-addr'); if (el) { el.focus(); } return; }
-    var lines = S.cart.map(function (l) { return { name: l.name, pack: l.pack, cut: l.cut, qty: l.qty, total: l.price * kgOf(l.pack) * l.qty }; });
+    var lines = S.cart.map(function (l) { return { name: l.name, key: l.opt || '', size: l.size || '', pack: l.pack, cut: l.cut, qty: l.qty, total: l.price * kgOf(l.pack) * l.qty }; });
     if (!CONFIG.api) {
       var t = totals(), n = istNow();
       finish({ id: 'BL' + String(n.getDate()).padStart(2, '0') + String(n.getMonth() + 1).padStart(2, '0') + '-' + Math.floor(100 + Math.random() * 900), lines: lines, subtotal: t.sub, fee: t.fee, total: t.total });
@@ -446,11 +544,12 @@
       body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total }); return; }
+        if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total, delivery: d.delivery }); return; }
         S.sending = false;
         if (d.error === 'stock') {
-          if (d.products) { applyApi({ products: d.products }); }
-          S.short = 'Some items ran short while you were ordering: ' + d.short.map(function (x) { return x.name + (x.left ? ' (only ' + fmtKg(x.left) + ' left)' : ' (sold out)'); }).join(', ') + '. Please change your slip and place the order again.';
+          var msg = 'Some items ran short while you were ordering: ' + d.short.map(function (x) { return x.name + (x.size ? ' ' + x.size.toLowerCase() : '') + (x.left ? ' (only ' + fmtKg(x.left) + ' left)' : ' (sold out)'); }).join(', ') + '. Please change your slip and place the order again.';
+          loadApi();
+          S.short = msg;
         } else { S.errors = { server: true }; }
         keepScroll();
       })
@@ -671,21 +770,25 @@
     var a = e.target.closest('[data-act]'); if (!a) { return; }
     var act = a.getAttribute('data-act'), v = a.getAttribute('data-v'), i = +a.getAttribute('data-i');
     switch (act) {
-      case 'group': S.openGroup = S.openGroup === a.getAttribute('data-g') ? '' : a.getAttribute('data-g'); var st = main.scrollTop; render(false); main.scrollTop = st; break;
+      case 'group': S.groupTouched = true; S.openGroup = S.openGroup === a.getAttribute('data-g') ? '' : a.getAttribute('data-g'); var st = main.scrollTop; render(false); main.scrollTop = st; break;
       case 'item': openSheet(a.getAttribute('data-id')); break;
       case 'tocatch': e.preventDefault(); var c = $('#catch'); if (c) { c.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } break;
       case 'pack': S.pick.pack = v; rerenderSheet(); break;
+      case 'opt': S.pick.opt = v; rerenderSheet(); break;
       case 'cut': S.pick.cut = v; rerenderSheet(); break;
       case 'qinc': S.pick.qty++; rerenderSheet(); break;
       case 'qdec': S.pick.qty = Math.max(1, S.pick.qty - 1); rerenderSheet(); break;
       case 'add':
-        var p = findP(S.pick.id), key = p.id + '|' + S.pick.pack + '|' + S.pick.cut, hit = S.cart.filter(function (l) { return l.key === key; })[0];
-        if (hit) { hit.qty += S.pick.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, pack: S.pick.pack, cut: S.pick.cut, qty: S.pick.qty, price: p.price }); }
+        var p = findP(S.pick.id), op = optOf(p, S.pick.opt) || p.options[0], key = lineKey(p, op, S.pick.pack, S.pick.cut), hit = S.cart.filter(function (l) { return l.key === key; })[0];
+        if (hit) { hit.qty += S.pick.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, opt: op.key, size: op.size, pack: S.pick.pack, cut: S.pick.cut, qty: S.pick.qty, price: op.price }); }
         saveCart(); try { if (navigator.vibrate) { navigator.vibrate(8); } } catch (err) {}
         closeSheet(); render(false);
         var cnt = $('#cnt'); if (cnt) { cnt.classList.add('bump'); setTimeout(function () { cnt.classList.remove('bump'); }, 180); }
         break;
-      case 'linc': S.cart[i].qty++; saveCart(); render(false); break;
+      case 'linc':
+        var lp = S.products.filter(function (x) { return x.id === S.cart[i].id; })[0];
+        if (lp && kgLeft(lp, S.cart[i].opt) < kgOf(S.cart[i].pack)) { S.short = 'That’s all we have of ' + S.cart[i].name + (S.cart[i].size ? ' (' + S.cart[i].size.toLowerCase() + ')' : '') + ' right now.'; keepScroll(); break; }
+        S.cart[i].qty++; saveCart(); keepScroll(); break;
       case 'ldec': if (--S.cart[i].qty <= 0) { S.cart.splice(i, 1); } saveCart(); render(false); break;
       case 'lrm': S.cart.splice(i, 1); saveCart(); render(false); break;
       case 'fulfil': S.form.fulfil = v; saveForm(); render(false); break;
@@ -729,11 +832,13 @@
     if (S.myorders.some(function (o) { return ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next'].indexOf(o.status) > -1; })) { loadMyOrders(); }
   }, 60000);
 
-  // countdown
+  // countdown, and fresh stock when the cut-off passes or a catch is being weighed
   setInterval(function () {
-    if (S.screen !== 'home') { return; }
-    var w = windowInfo(), el = $('#left');
-    if (w.open && el) { el.textContent = w.left; } else if (!!w.open !== !!el) { var st = main.scrollTop; render(false); main.scrollTop = st; }
+    if (S.screen !== 'home' || document.hidden) { return; }
+    var age = Date.now() - S.apiAt, moved = S.plan && S.plan.date !== plan().date;
+    if (CONFIG.api && age > 55000 && (moved || S.pending || !S.products.length || age > 600000)) { loadApi(); }
+    var w = info(), el = $('#left');
+    if (w.left && el) { el.textContent = w.left; } else if (!!w.left !== !!el) { keepScroll(); }
   }, 30000);
 
   enterRoute();

@@ -24,7 +24,7 @@
   var S = {
     auth: store('admin') || null,       // { pw, by }
     tab: 'orders', data: null, loading: false, err: '', note: '',
-    filter: 'open', win: '', open: '', busy: {}, bills: {}, dirty: {}
+    filter: 'open', win: '', open: '', busy: {}, bills: {}, warn: '', openLot: '', addOpen: false, editFish: ''
   };
 
   // ---------- server ----------
@@ -115,7 +115,7 @@
       '<p class="ditems">' + esc(o.items) + '</p>' +
       '<p>' + esc(o.address) + (o.area ? ', ' + esc(o.area) : '') + (o.map ? ' · <a href="' + esc(o.map) + '" target="_blank" rel="noopener">pinned on map</a>' : '') + '</p>' +
       (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
-      '<p class="dsub">Window ' + esc(winLabel(o.window)) + ' · placed ' + esc(o.placed) + (o.outAt ? ' · out ' + esc(timeOf(o.outAt)) : '') + (o.deliveredAt ? ' · delivered ' + esc(timeOf(o.deliveredAt)) : '') + '</p>' +
+      '<p class="dsub">Delivery ' + esc(winLabel(o.window)) + ' · placed ' + esc(o.placed) + (o.outAt ? ' · out ' + esc(timeOf(o.outAt)) : '') + (o.deliveredAt ? ' · delivered ' + esc(timeOf(o.deliveredAt)) : '') + '</p>' +
       '<div class="dbtns"><a class="btn dark" href="tel:+91' + esc(o.mobile) + '">Call</a>' +
       '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a>' +
       '<a class="btn dark" href="' + esc(nav) + '" target="_blank" rel="noopener">Map</a></div>' +
@@ -123,7 +123,7 @@
       '<div class="arow"><button class="btn dark press" data-act="pay" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>' + (o.paid ? 'Mark unpaid' : 'Mark paid') + '</button>' +
         '<label class="asel"><span>Change status</span><select data-act="setstage" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>' +
         STAGES.map(function (s) { return '<option' + (s === o.status ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></label></div>' +
-      '<div class="fld"><label for="fin-' + esc(o.id) + '">Final amount after cleaning (₹)</label>' +
+      '<div class="fld"><label for="fin-' + esc(o.id) + '">Final amount, if different (₹)</label>' +
         '<div class="arow"><input id="fin-' + esc(o.id) + '" class="ainput num" type="number" inputmode="numeric" min="0" placeholder="' + rs(o.total) + '" value="' + (o.final === '' || o.final === null || o.final === undefined ? '' : esc(o.final)) + '">' +
         '<button class="btn press" data-act="final" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>Save</button></div></div>' +
       '<div class="arow">' +
@@ -144,9 +144,9 @@
     var list = filterOrders(all);
     return '<div class="stack">' +
       '<div class="dhead"><h1 class="anton">Orders</h1><button class="linkbtn" data-act="refresh">' + (S.loading ? 'Refreshing…' : 'Refresh') + '</button></div>' +
-      (S.filter !== 'open' ? '<div class="chiprow" role="group" aria-label="Window">' + wins.map(function (w) {
-        return '<button class="chip" data-act="win" data-v="' + esc(w) + '" aria-pressed="' + (S.win === w) + '">' + esc(winLabel(w)) + (w === S.data.window ? ' · now' : '') + '</button>';
-      }).join('') + '<button class="chip" data-act="win" data-v="*" aria-pressed="' + (S.win === '*') + '">All windows</button></div>' : '') +
+      (S.filter !== 'open' ? '<div class="chiprow" role="group" aria-label="Delivery day">' + wins.map(function (w) {
+        return '<button class="chip" data-act="win" data-v="' + esc(w) + '" aria-pressed="' + (S.win === w) + '">' + esc(winLabel(w)) + (w === S.data.window ? ' · next' : '') + '</button>';
+      }).join('') + '<button class="chip" data-act="win" data-v="*" aria-pressed="' + (S.win === '*') + '">All days</button></div>' : '') +
       '<div class="chiprow" role="group" aria-label="Stage">' + FILTERS.map(function (f) {
         return '<button class="chip" data-act="filter" data-v="' + f[0] + '" aria-pressed="' + (S.filter === f[0]) + '">' + f[1] + ' <span class="cnt">' + count(f[0]) + '</span></button>';
       }).join('') + '</div>' +
@@ -156,41 +156,142 @@
       '</div>';
   }
 
+  // ---------- stock: catches bought at the auction ----------
+  function today() { var d = new Date(); var n = new Date(d.getTime() + (d.getTimezoneOffset() + 330) * 60000); return n.getFullYear() + '-' + ('0' + (n.getMonth() + 1)).slice(-2) + '-' + ('0' + n.getDate()).slice(-2); }
+  function sizeName(s) { return s || 'One size'; }
+  function msgBoxes() {
+    return (S.note ? '<div class="box ok" role="status">' + esc(S.note) + '</div>' : '') +
+      (S.warn ? '<div class="box warn" role="alert">' + esc(S.warn) + '</div>' : '') +
+      (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div>' : '');
+  }
+  function addCatchHtml() {
+    var fish = (S.data.fish || []).slice().sort(function (a, b) { return a.group.localeCompare(b.group) || a.name.localeCompare(b.name); });
+    var groups = {}; fish.forEach(function (f) { (groups[f.group] = groups[f.group] || []).push(f); });
+    var busy = !!S.busy.lot;
+    return '<div class="aform" id="addcatch"><div class="ah1"><b>Add catch</b><button class="linkbtn dk" data-act="addclose">Close</button></div>' +
+      '<label class="afl"><span>Fish</span><select class="ainput" id="c-fish"><option value="">Choose a fish</option>' +
+        Object.keys(groups).map(function (g) { return '<optgroup label="' + esc(g) + '">' + groups[g].map(function (f) { return '<option value="' + esc(f.name) + '" data-price="' + esc(f.price || '') + '">' + esc(f.name) + (f.en ? ' (' + esc(f.en) + ')' : '') + '</option>'; }).join('') + '</optgroup>'; }).join('') +
+      '</select></label>' +
+      '<label class="afl"><span>Size</span><select class="ainput" id="c-size">' + (S.data.sizes || ['']).map(function (s) { return '<option value="' + esc(s) + '">' + esc(sizeName(s)) + '</option>'; }).join('') + '</select></label>' +
+      '<div class="agrid"><label><span>Kg bought (whole)</span><input class="ainput num" id="c-kg" type="number" inputmode="decimal" min="0" step="0.1"></label>' +
+        '<label><span>Number of fish</span><input class="ainput num" id="c-pcs" type="number" inputmode="numeric" min="0" placeholder="Optional"></label>' +
+        '<label><span>Cost per kg (₹)</span><input class="ainput num" id="c-cost" type="number" inputmode="decimal" min="0" placeholder="Auction price"></label>' +
+        '<label><span>Selling price per kg (₹)</span><input class="ainput num" id="c-price" type="number" inputmode="numeric" min="1"></label>' +
+        '<label><span>Harbour</span><input class="ainput" id="c-harbour" placeholder="Optional" value="' + esc(store('lastHarbour') || '') + '"></label>' +
+        '<label><span>Landed on</span><input class="ainput" id="c-landed" type="date" value="' + today() + '"></label></div>' +
+      '<label class="acheck"><input type="checkbox" id="c-live"> Go live now (skip the ' + esc(S.data.settings.autoMin) + '-minute check)</label>' +
+      '<button class="btn press" data-act="savelot"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save catch') + '</button>' +
+      '<span class="dsub">Enter each size as its own line. Customers see it ' + (Number(S.data.settings.autoMin) ? S.data.settings.autoMin + ' minutes after you save, or when you tap Go live.' : 'right away.') + '</span></div>';
+  }
+  function lotCard(l) {
+    var open = S.openLot === l.lot, busy = !!S.busy[l.lot];
+    var tag = { Draft: 'newo', Live: 'conf', Ended: 'done', Closed: 'cancel' }[l.stage] || 'conf';
+    var margin = l.cost !== '' && l.cost !== null && Number(l.cost) > 0 ? Math.round((l.price - l.cost) / l.price * 100) : null;
+    var head = '<button class="aorder-head" data-act="lot" data-id="' + esc(l.lot) + '" aria-expanded="' + open + '">' +
+      '<span class="ah1"><b>' + esc(l.fish) + (l.size ? ' · ' + esc(l.size.toLowerCase()) : '') + '</b><span class="num">' + rs(l.price) + '/kg</span></span>' +
+      '<span class="ah2">' + esc(l.landedLabel) + (l.harbour ? ' · ' + esc(l.harbour) : '') + ' · ' + esc(l.lot) + '</span>' +
+      '<span class="ah2 num">Bought ' + kg(l.kg) + (l.pieces !== '' && l.pieces !== null ? ' (' + l.pieces + ' fish)' : '') + ' · sold ' + kg(l.sold) + ' · <b>left ' + kg(l.left) + '</b></span>' +
+      '<span class="ah3"><span class="stage ' + tag + '">' + esc(l.stage === 'Draft' ? 'Waiting to go live' : l.stage === 'Ended' ? 'Selling ended' : l.stage) + '</span>' +
+        (margin !== null ? '<span class="ptag">Cost ' + rs(l.cost) + ' · ' + margin + '% margin</span>' : '') + '</span></button>';
+    if (!open) { return '<div class="aorder">' + head + '</div>'; }
+    var gapTol = Math.max(0.3, l.expected * 0.02);
+    return '<div class="aorder open">' + head + '<div class="abody">' +
+      '<span class="dsub">Sells until ' + esc(dayLabel(l.lastDay)) + '. Kg sold counts every order except cancelled ones.</span>' +
+      '<div class="agrid" data-lot="' + esc(l.lot) + '"><label><span>Selling price per kg (₹)</span><input class="ainput num" data-f="price" type="number" inputmode="numeric" value="' + esc(l.price) + '"></label>' +
+        '<label><span>Kg bought</span><input class="ainput num" data-f="kg" type="number" inputmode="decimal" step="0.1" value="' + esc(l.kg) + '"></label>' +
+        '<label><span>Number of fish</span><input class="ainput num" data-f="pieces" type="number" inputmode="numeric" value="' + esc(l.pieces) + '"></label>' +
+        '<label><span>&nbsp;</span><button class="btn press" data-act="editlot" data-id="' + esc(l.lot) + '"' + (busy ? ' disabled' : '') + '>Save changes</button></label></div>' +
+      '<div class="arow">' +
+        (l.stage === 'Draft' ? '<button class="btn press" data-act="lotstatus" data-id="' + esc(l.lot) + '" data-v="Live"' + (busy ? ' disabled' : '') + '>Go live now</button>' : '') +
+        (l.stage === 'Live' || l.stage === 'Draft' ? '<button class="btn dark press" data-act="lotstatus" data-id="' + esc(l.lot) + '" data-v="Closed"' + (busy ? ' disabled' : '') + '>Stop selling</button>' : '') +
+        (l.stage === 'Closed' ? '<button class="btn dark press" data-act="lotstatus" data-id="' + esc(l.lot) + '" data-v="Live"' + (busy ? ' disabled' : '') + '>Sell again</button>' : '') +
+      '</div>' +
+      '<div class="acount" data-lot="' + esc(l.lot) + '"><b>End-of-day count</b>' +
+        '<span class="dsub">Weigh what is left in the cold box. It should be about <b class="num">' + kg(l.expected) + '</b> (bought, minus orders for today and earlier, plus earlier count changes). A gap over ' + kg(gapTol) + ' is flagged.</span>' +
+        '<div class="agrid"><label><span>Kg on hand now</span><input class="ainput num" data-f="counted" type="number" inputmode="decimal" step="0.1"></label>' +
+          '<label><span>Kg thrown away</span><input class="ainput num" data-f="waste" type="number" inputmode="decimal" step="0.1" placeholder="0"></label>' +
+          '<label><span>Fish counted</span><input class="ainput num" data-f="pieces" type="number" inputmode="numeric" placeholder="Optional"></label>' +
+          '<label><span>Note</span><input class="ainput" data-f="note" placeholder="Optional"></label></div>' +
+        '<label class="acheck"><input type="checkbox" data-f="close"> Nothing left to sell, close this catch</label>' +
+        '<button class="btn press" data-act="count" data-id="' + esc(l.lot) + '"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save count') + '</button></div>' +
+      '</div></div>';
+  }
+  function dayLabel(ds) {
+    var p = String(ds || '').split('-'); if (p.length !== 3) { return ds || ''; }
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ' + (+p[2]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+p[1] - 1];
+  }
   function stockHtml() {
-    var groups = {}; (S.data.products || []).forEach(function (p) { (groups[p.group || 'Other'] = groups[p.group || 'Other'] || []).push(p); });
-    return '<div class="stack"><div class="dhead"><h1 class="anton">Stock</h1><span class="dcount">Window ' + esc(winLabel(S.data.window)) + '</span></div>' +
-      '<span class="muted-g" style="text-align:left">Set the price and how many kg you can source for this window. Leave kg empty for no limit.</span>' +
-      (S.note ? '<div class="box ok" role="status">' + esc(S.note) + '</div>' : '') +
-      (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div>' : '') +
-      Object.keys(groups).map(function (g) {
-        return '<h2 class="osec">' + esc(g) + '</h2>' + groups[g].map(function (p) {
-          var k = 'p:' + p.name, busy = !!S.busy[k];
-          return '<div class="astock' + (p.available ? '' : ' off') + '" data-name="' + esc(p.name) + '">' +
-            '<div class="ah1"><b>' + esc(p.name) + '</b><button class="toggle" role="switch" aria-checked="' + p.available + '" data-act="avail" data-name="' + esc(p.name) + '"' + (busy ? ' disabled' : '') + '><span></span>' + (p.available ? 'Available' : 'Sold out') + '</button></div>' +
-            '<div class="agrid"><label><span>Price per kg (₹)</span><input class="ainput num" type="number" inputmode="numeric" min="1" data-f="price" value="' + esc(p.price) + '"></label>' +
-            '<label><span>Kg for this window</span><input class="ainput num" type="number" inputmode="decimal" min="0" step="0.5" data-f="cap" placeholder="No limit" value="' + esc(p.cap) + '"></label></div>' +
-            '<div class="ah1"><span class="dsub">Ordered ' + kg(p.ordered) + (p.cap === '' ? '' : ' · left ' + kg(p.left)) + '</span>' +
-            '<button class="btn press small" data-act="savep" data-name="' + esc(p.name) + '"' + (busy || !S.dirty[k] ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save') + '</button></div></div>';
-        }).join('');
-      }).join('') + '</div>';
+    var lots = S.data.lots || [], plan = S.data.plan || {};
+    var drafts = lots.filter(function (l) { return l.stage === 'Draft'; });
+    var sec = function (title, list) { return list.length ? '<h2 class="osec">' + title + '</h2>' + list.map(lotCard).join('') : ''; };
+    var counts = (S.data.counts || []).slice(0, 12);
+    return '<div class="stack"><div class="dhead"><h1 class="anton">Stock</h1><button class="linkbtn" data-act="refresh">' + (S.loading ? 'Refreshing…' : 'Refresh') + '</button></div>' +
+      '<span class="muted-g" style="text-align:left">Orders now go out ' + (plan.sameDay ? 'this evening' : 'tomorrow evening') + ' (' + esc(dayLabel(plan.date)) + ').</span>' +
+      msgBoxes() +
+      (drafts.length ? '<div class="box">' + drafts.length + (drafts.length === 1 ? ' entry is' : ' entries are') + ' waiting to go live. Check the prices, then go live, or they go live by themselves.' +
+        '<button class="btn press" style="margin-top:12px;width:100%" data-act="golive"' + (S.busy.golive ? ' disabled' : '') + '>' + (S.busy.golive ? 'Going live…' : 'Go live now') + '</button></div>' : '') +
+      (S.addOpen ? addCatchHtml() : '<button class="btn big press" data-act="addopen">Add catch</button>') +
+      sec('Waiting to go live', drafts) +
+      sec('On sale', lots.filter(function (l) { return l.stage === 'Live'; })) +
+      sec('Ended or stopped', lots.filter(function (l) { return l.stage === 'Ended' || l.stage === 'Closed'; })) +
+      (!lots.length ? '<div class="box">No catch entered in the last few days. Tap Add catch after the auction.</div>' : '') +
+      (counts.length ? '<h2 class="osec">Recent counts</h2><div class="abuy">' + counts.map(function (c) {
+        var tol = Math.max(0.3, c.expected * 0.02), bad = c.gap < -tol;
+        return '<div><span>' + esc(c.fish) + (c.size ? ' · ' + esc(c.size.toLowerCase()) : '') + '<small class="dsub" style="display:block">' + esc(c.time) + ' · ' + esc(c.by) + '</small></span>' +
+          '<b class="num' + (bad ? ' gapbad' : '') + '">' + (c.gap > 0 ? '+' : '') + kg(c.gap) + '</b></div>';
+      }).join('') + '</div><span class="muted-g" style="text-align:left">Gap is counted minus expected, after what was thrown away. Red means fish is missing.</span>' : '') +
+      '</div>';
   }
 
-  function buyingHtml() {
-    var items = (S.data.products || []).filter(function (p) { return p.ordered > 0; }).sort(function (a, b) { return b.ordered - a.ordered; });
-    var total = items.reduce(function (a, p) { return a + p.ordered; }, 0);
-    var text = 'Blio buying list, ' + winLabel(S.data.window) + '\n\n' + items.map(function (p) { return p.name + ': ' + kg(p.ordered); }).join('\n') + '\n\nTotal: ' + kg(total);
-    return '<div class="stack"><div class="dhead"><h1 class="anton">Buying</h1><span class="dcount">Window ' + esc(winLabel(S.data.window)) + '</span></div>' +
-      '<span class="muted-g" style="text-align:left">What to buy for this window: every order except cancelled ones, after cleaning weight.</span>' +
-      (items.length ? '<div class="abuy">' + items.map(function (p) { return '<div><span>' + esc(p.name) + '</span><b class="num">' + kg(p.ordered) + '</b></div>'; }).join('') +
-        '<div class="tot"><span>Total</span><b class="num">' + kg(total) + '</b></div></div>' +
-        '<a class="btn big press" href="https://wa.me/?text=' + encodeURIComponent(text) + '" target="_blank" rel="noopener">Share list on WhatsApp</a>'
-        : '<div class="box">No orders in this window yet.</div>') +
+  // ---------- fish list and categories ----------
+  function fishForm(f) {
+    var cats = S.data.categories || [], isNew = !f.name, busy = !!S.busy.fish;
+    return '<div class="aform" id="fishform"><div class="ah1"><b>' + (isNew ? 'Add a fish' : esc(f.name)) + '</b><button class="linkbtn dk" data-act="fishclose">Close</button></div>' +
+      (isNew ? '<label class="afl"><span>Name customers see</span><input class="ainput" id="f-name" placeholder="For example Surmai"></label>' : '') +
+      '<label class="afl"><span>Category</span><select class="ainput" id="f-group">' + cats.map(function (c) { return '<option' + (c.name === f.group ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
+      '<div class="agrid"><label><span>English name</span><input class="ainput" id="f-en" value="' + esc(f.en) + '" placeholder="King fish"></label>' +
+        '<label><span>Marathi name</span><input class="ainput" id="f-mr" value="' + esc(f.mr) + '" placeholder="सुरमई"></label>' +
+        '<label><span>Usual price per kg (₹)</span><input class="ainput num" id="f-price" type="number" inputmode="numeric" value="' + esc(f.price || '') + '"></label>' +
+        '<label><span>Left after cleaning (%)</span><input class="ainput num" id="f-yield" type="number" inputmode="numeric" min="0" max="100" value="' + esc(f.yieldPct || '') + '" placeholder="Optional, like 70"></label></div>' +
+      '<label class="afl"><span>Comes from</span><input class="ainput" id="f-from" value="' + esc(f.from) + '" placeholder="the Konkan coast"></label>' +
+      '<label class="afl"><span>Cuts, separated by commas</span><input class="ainput" id="f-cuts" value="' + esc((f.cuts || ['Whole', 'Curry cut']).join(', ')) + '"></label>' +
+      '<label class="acheck"><input type="checkbox" id="f-show"' + (f.show === false ? '' : ' checked') + '> Show in the shop when there is a catch</label>' +
+      '<button class="btn press" data-act="savefish" data-v="' + esc(f.name || '') + '"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save fish') + '</button></div>';
+  }
+  function fishHtml() {
+    var fish = S.data.fish || [], cats = S.data.categories || [], busy = !!S.busy.cat;
+    var groups = cats.map(function (c) { return { c: c, list: fish.filter(function (f) { return f.group === c.name; }) }; });
+    var other = fish.filter(function (f) { return !cats.some(function (c) { return c.name === f.group; }); });
+    if (other.length) { groups.push({ c: { name: 'Other', mr: '', show: true }, list: other }); }
+    var editing = S.editFish === '+' ? {} : fish.filter(function (f) { return f.name === S.editFish; })[0];
+    return '<div class="stack"><div class="dhead"><h1 class="anton">Fish</h1><button class="linkbtn" data-act="refresh">' + (S.loading ? 'Refreshing…' : 'Refresh') + '</button></div>' +
+      '<span class="muted-g" style="text-align:left">The fish you can enter as a catch. Customers only see a fish when it has a live catch.</span>' +
+      msgBoxes() +
+      (editing ? fishForm(editing) : '<button class="btn big press" data-act="fishedit" data-v="+">Add a fish</button>') +
+      groups.map(function (g) {
+        return '<h2 class="osec">' + esc(g.c.name) + (g.c.show === false ? ' · hidden' : '') + '</h2>' +
+          (g.list.length ? '<div class="abuy">' + g.list.map(function (f) {
+            return '<div class="frow' + (f.show ? '' : ' off') + '"><span><b>' + esc(f.name) + '</b><small class="dsub" style="display:block">' + esc([f.en, f.mr].filter(Boolean).join(' · ')) + (f.show ? '' : ' · hidden') + '</small></span>' +
+              '<button class="linkbtn dk" data-act="fishedit" data-v="' + esc(f.name) + '">Edit</button></div>';
+          }).join('') + '</div>' : '<div class="box">No fish in this category yet.</div>');
+      }).join('') +
+      '<h2 class="osec">Categories</h2><div class="abuy">' + cats.map(function (c) {
+        return '<div class="frow' + (c.show ? '' : ' off') + '"><span><b>' + esc(c.name) + '</b><small class="dsub" style="display:block">' + esc(c.mr || '') + (c.show ? '' : ' · hidden') + '</small></span>' +
+          '<button class="toggle" role="switch" aria-checked="' + !!c.show + '" data-act="catshow" data-v="' + esc(c.name) + '"' + (busy ? ' disabled' : '') + '><span></span>' + (c.show ? 'Shown' : 'Hidden') + '</button></div>';
+      }).join('') + '</div>' +
+      '<div class="aform"><b>Add a category</b><div class="agrid"><label><span>Name</span><input class="ainput" id="k-name" placeholder="For example Shellfish"></label>' +
+        '<label><span>Marathi name</span><input class="ainput" id="k-mr" placeholder="Optional"></label></div>' +
+        '<button class="btn press" data-act="savecat"' + (busy ? ' disabled' : '') + '>Add category</button>' +
+        '<span class="dsub">New categories show with a fish drawing in the shop.</span></div>' +
       '</div>';
   }
 
   function settingsHtml() {
     var st = S.data.settings || {}, busy = !!S.busy.settings;
     var f = function (id, label, val, extra) { return '<div class="fld"><label for="s-' + id + '">' + label + '</label><input id="s-' + id + '" class="ainput" data-s="' + id + '" value="' + esc(val) + '" ' + (extra || '') + '></div>'; };
+    var g = function (id, label, val, extra) { return '<label><span>' + label + '</span><input id="s-' + id + '" class="ainput num" data-s="' + id + '" value="' + esc(val) + '" ' + (extra || '') + '></label>'; };
+    var sw = function (id, label, on) { return '<div class="ah1 aswitch"><span>' + label + '</span><button class="toggle" role="switch" aria-checked="' + !!on + '" data-act="sw" data-v="' + id + '"><span></span>' + (on ? 'On' : 'Off') + '</button></div>'; };
     return '<div class="stack"><div class="dhead"><h1 class="anton">Settings</h1></div>' +
       (S.note ? '<div class="box ok" role="status">' + esc(S.note) + '</div>' : '') +
       (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div>' : '') +
@@ -200,6 +301,15 @@
       f('rider', 'Delivery person mobile', st.rider, 'type="tel" inputmode="numeric" placeholder="10-digit number"') +
       f('pin', 'Delivery PIN (for Blio Delivery)', st.pin, 'inputmode="numeric" placeholder="4 to 8 digits"') +
       f('fssai', 'FSSAI number', st.fssai, 'placeholder="Printed on bills once added"') +
+      '<h2 class="osec">Delivery and catch</h2><div class="aform">' +
+      '<div class="agrid">' + g('start', 'Delivery starts', st.start, 'type="time"') + g('end', 'Delivery ends', st.end, 'type="time"') +
+        g('cutoff', 'Same-day cut-off', st.cutoff, 'type="time"') + g('sellDays', 'Sell each catch for (days)', st.sellDays, 'type="number" inputmode="numeric" min="1" max="7"') + '</div>' +
+      '<span class="dsub">Orders placed before the cut-off are delivered the same evening. Later orders go the next evening.</span>' +
+      sw('discOn', 'Discount on the second day', st.discOn) +
+      (st.discOn ? '<div class="agrid">' + g('discPct', 'Second-day discount (%)', st.discPct, 'type="number" inputmode="numeric" min="0" max="90"') + '</div>' : '') +
+      sw('showLanding', 'Show customers the landing day', st.showLanding) +
+      '<div class="agrid">' + g('autoMin', 'Go live by itself after (minutes)', st.autoMin, 'type="number" inputmode="numeric" min="0" max="600"') + '</div>' +
+      '<span class="dsub">A new catch waits this long so you can check it. Use 0 to go live as soon as it is saved.</span></div>' +
       '<button class="btn big press" data-act="saves"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save settings') + '</button>' +
       '<div class="box">Signed in as <b>' + esc(S.auth.by) + '</b>. The admin password can only be changed in the Google Sheet.' +
       (S.data.sheetUrl ? ' <a href="' + esc(S.data.sheetUrl) + '" target="_blank" rel="noopener">Open the Google Sheet</a>' : '') + '</div>' +
@@ -216,11 +326,11 @@
         (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div><button class="btn press" data-act="refresh">Try again</button>' : '<div class="box">Loading orders and stock…</div>') + '</div>';
       return;
     }
-    main.innerHTML = { orders: ordersHtml, stock: stockHtml, buying: buyingHtml, settings: settingsHtml }[S.tab]();
+    main.innerHTML = ({ orders: ordersHtml, stock: stockHtml, fish: fishHtml, settings: settingsHtml }[S.tab] || ordersHtml)();
     main.scrollTop = keepY;
     if (focus && document.getElementById(focus)) { document.getElementById(focus).focus(); }
   }
-  function goTab(t) { S.tab = t; S.note = ''; S.err = ''; render(); main.scrollTop = 0; }
+  function goTab(t) { S.tab = t; S.note = ''; S.warn = ''; S.err = ''; render(); main.scrollTop = 0; }
 
   // ---------- events ----------
   document.addEventListener('click', function (e) {
@@ -252,25 +362,80 @@
           render();
         }).catch(function () { delete S.busy[id]; S.err = 'No connection. The bill wasn’t made.'; render(); });
         break;
-      case 'avail':
-        var p = (S.data.products || []).filter(function (x) { return x.name === name; })[0]; if (!p) { return; }
-        act('p:' + name, { op: 'product', name: name, available: !p.available }, function (d) { Object.assign(p, d.product || { available: !p.available }); S.note = name + (p.available ? ' is available' : ' is marked sold out'); }, 'Couldn’t update ' + name + '.');
+      case 'addopen': S.addOpen = true; S.note = ''; S.warn = ''; render(); var cf = $('#c-fish'); if (cf) { cf.focus(); } break;
+      case 'addclose': S.addOpen = false; render(); break;
+      case 'savelot':
+        var c = { fish: $('#c-fish').value, size: $('#c-size').value, kg: $('#c-kg').value.trim(), pieces: $('#c-pcs').value.trim(), cost: $('#c-cost').value.trim(),
+          price: $('#c-price').value.trim(), harbour: $('#c-harbour').value.trim(), landed: $('#c-landed').value, live: $('#c-live').checked };
+        S.warn = '';
+        if (!c.fish) { S.err = 'Choose the fish.'; render(); return; }
+        if (!(Number(c.kg) > 0)) { S.err = 'Enter the kg bought.'; render(); return; }
+        if (!(Number(c.price) > 0)) { S.err = 'Enter the selling price per kg.'; render(); return; }
+        if (c.cost !== '' && Number(c.cost) > Number(c.price)) { S.warn = 'Note: the cost is higher than the selling price for ' + c.fish + '.'; }
+        store('lastHarbour', c.harbour);
+        act('lot', Object.assign({ op: 'lot' }, c, { kg: Number(c.kg), price: Number(c.price), pieces: c.pieces === '' ? '' : Number(c.pieces), cost: c.cost === '' ? '' : Number(c.cost) }), function (d) {
+          var mins = Number(S.data.settings.autoMin) || 0;
+          S.note = c.fish + (c.size ? ' ' + c.size.toLowerCase() : '') + ', ' + kg(c.kg) + ' saved as ' + d.lot + (c.live || !mins ? ', on sale now.' : '. It goes on sale in ' + mins + ' minutes, or tap Go live now.');
+          S.addOpen = false; load(true);
+        }, 'Couldn’t save the catch.');
         break;
-      case 'savep':
-        var card = a.closest('.astock'), pp = (S.data.products || []).filter(function (x) { return x.name === name; })[0];
-        var price = card.querySelector('[data-f=price]').value.trim(), cap = card.querySelector('[data-f=cap]').value.trim();
-        if (!(Number(price) > 0)) { S.err = 'Enter a price for ' + name + '.'; render(); return; }
-        if (cap !== '' && !(Number(cap) >= 0)) { S.err = 'Kg must be a number, or empty for no limit.'; render(); return; }
-        act('p:' + name, { op: 'product', name: name, price: Number(price), cap: cap === '' ? '' : Number(cap) }, function (d) {
-          if (d.product && pp) { Object.assign(pp, d.product); } delete S.dirty['p:' + name]; S.note = name + ' saved: ' + rs(price) + '/kg' + (cap === '' ? ', no kg limit' : ', ' + kg(cap));
-        }, 'Couldn’t save ' + name + '.');
+      case 'lot': S.openLot = S.openLot === id ? '' : id; S.note = ''; S.warn = ''; render(); break;
+      case 'golive': act('golive', { op: 'golive' }, function (d) { S.note = d.count + (d.count === 1 ? ' entry is' : ' entries are') + ' on sale now.'; load(true); }, 'Couldn’t go live.'); break;
+      case 'lotstatus':
+        act(id, { op: 'lotedit', lot: id, status: v }, function () { S.note = id + (v === 'Closed' ? ' stopped. Customers can’t order it now.' : ' is on sale.'); load(true); }, 'Couldn’t update ' + id + '.');
+        break;
+      case 'editlot':
+        var eg = main.querySelector('.agrid[data-lot="' + id + '"]'), lp = eg.querySelector('[data-f=price]').value.trim(), lk = eg.querySelector('[data-f=kg]').value.trim(), lpc = eg.querySelector('[data-f=pieces]').value.trim();
+        if (!(Number(lp) > 0) || !(Number(lk) > 0)) { S.err = 'Price and kg must be more than 0.'; render(); return; }
+        act(id, { op: 'lotedit', lot: id, price: Number(lp), kg: Number(lk), pieces: lpc === '' ? '' : Number(lpc) }, function () { S.note = id + ' saved.'; load(true); }, 'Couldn’t save ' + id + '.');
+        break;
+      case 'count':
+        var cg = main.querySelector('.acount[data-lot="' + id + '"]'), q = function (k) { return cg.querySelector('[data-f=' + k + ']'); };
+        var counted = q('counted').value.trim(), waste = q('waste').value.trim();
+        if (counted === '' || !(Number(counted) >= 0)) { S.err = 'Enter the kg on hand now.'; render(); return; }
+        var lotx = (S.data.lots || []).filter(function (x) { return x.lot === id; })[0], lname = lotx ? lotx.fish + (lotx.size ? ' ' + lotx.size.toLowerCase() : '') : id;
+        act(id, { op: 'count', lot: id, counted: Number(counted), waste: waste === '' ? 0 : Number(waste), pieces: q('pieces').value.trim(), note: q('note').value.trim(), close: q('close').checked }, function (d) {
+          var tol = Math.max(0.3, d.expected * 0.02);
+          S.note = ''; S.warn = '';
+          if (d.gap < -tol) { S.warn = lname + ': ' + kg(-d.gap) + ' missing against the expected ' + kg(d.expected) + '. Check with the cleaner and the orders.'; }
+          else { S.note = lname + ': count saved. ' + (Math.abs(d.gap) < 0.05 ? 'It matches the expected weight.' : (d.gap > 0 ? '+' : '') + kg(d.gap) + ' against expected, within normal.'); }
+          load(true);
+        }, 'Couldn’t save the count.');
+        break;
+      case 'fishedit': S.editFish = v; S.note = ''; render(); main.scrollTop = 0; break;
+      case 'fishclose': S.editFish = ''; render(); break;
+      case 'savefish':
+        var fname = v || ($('#f-name') ? $('#f-name').value.trim() : '');
+        if (!fname) { S.err = 'Add the fish name.'; render(); return; }
+        if (!v && (S.data.fish || []).some(function (x) { return x.name.toLowerCase() === fname.toLowerCase(); })) { S.err = fname + ' is already in the list. Tap Edit on it instead.'; render(); return; }
+        var yv = $('#f-yield').value.trim(), pv = Number($('#f-price').value);
+        var fb = { op: 'fish', name: fname, group: $('#f-group').value, en: $('#f-en').value.trim(), mr: $('#f-mr').value.trim(), from: $('#f-from').value.trim(),
+          cuts: $('#f-cuts').value.split(',').map(function (x) { return x.trim(); }).filter(Boolean), yieldPct: yv === '' ? '' : Number(yv), show: $('#f-show').checked };
+        if (pv > 0) { fb.price = pv; }
+        act('fish', fb, function () { S.note = fname + ' saved.'; S.editFish = ''; load(true); }, 'Couldn’t save ' + fname + '.');
+        break;
+      case 'savecat':
+        var kn = $('#k-name').value.trim(); if (!kn) { S.err = 'Add the category name.'; render(); return; }
+        if ((S.data.categories || []).some(function (x) { return x.name.toLowerCase() === kn.toLowerCase(); })) { S.err = kn + ' is already a category.'; render(); return; }
+        act('cat', { op: 'category', name: kn, mr: $('#k-mr').value.trim() }, function () { S.note = 'Category ' + kn + ' added.'; load(true); }, 'Couldn’t add the category.');
+        break;
+      case 'catshow':
+        var kc = (S.data.categories || []).filter(function (x) { return x.name === v; })[0]; if (!kc) { return; }
+        act('cat', { op: 'category', name: v, show: !kc.show }, function () { kc.show = !kc.show; S.note = v + (kc.show ? ' is shown in the shop.' : ' is hidden from the shop.'); }, 'Couldn’t update ' + v + '.');
+        break;
+      case 'sw':
+        main.querySelectorAll('[data-s]').forEach(function (i) { S.data.settings[i.getAttribute('data-s')] = i.value.trim(); });
+        S.data.settings[v] = !S.data.settings[v]; render();
         break;
       case 'saves':
         var body = { op: 'settings' };
         main.querySelectorAll('[data-s]').forEach(function (i) { body[i.getAttribute('data-s')] = i.value.trim(); });
         if (body.rider && body.rider.replace(/[^0-9]/g, '').length !== 10) { S.err = 'The delivery person’s mobile needs 10 digits.'; render(); return; }
         if (body.pin && !/^[0-9]{4,8}$/.test(body.pin)) { S.err = 'The delivery PIN must be 4 to 8 digits.'; render(); return; }
-        act('settings', body, function (d) { S.data.settings = d.settings; S.note = 'Settings saved.'; }, 'Couldn’t save the settings.');
+        body.discOn = !!S.data.settings.discOn; body.showLanding = !!S.data.settings.showLanding;
+        if (['start', 'end', 'cutoff'].some(function (k) { return body[k] !== undefined && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(body[k]); })) { S.err = 'Enter the delivery times as hours and minutes.'; render(); return; }
+        if (body.start && body.end && body.start >= body.end) { S.err = 'Delivery must end after it starts.'; render(); return; }
+        act('settings', body, function (d) { S.data.settings = d.settings; S.note = 'Settings saved. The shop uses them from now.'; }, 'Couldn’t save the settings.');
         break;
     }
   });
@@ -279,9 +444,8 @@
       var id = e.target.getAttribute('data-id'); setOrder(id, { status: e.target.value }, 'now ' + e.target.value);
     }
   });
-  document.addEventListener('input', function (e) {
-    var card = e.target.closest && e.target.closest('.astock');
-    if (card) { var k = 'p:' + card.getAttribute('data-name'); if (!S.dirty[k]) { S.dirty[k] = true; var b = card.querySelector('[data-act=savep]'); if (b) { b.disabled = false; } } }
+  document.addEventListener('change', function (e) {
+    if (e.target.id === 'c-fish') { var op = e.target.selectedOptions[0], pr = $('#c-price'); if (op && pr && op.getAttribute('data-price')) { pr.value = op.getAttribute('data-price'); } }
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'a-pw') { var b = $('[data-act=login]'); if (b) { b.click(); } } });
 
