@@ -20,9 +20,9 @@ var GROUPS = ['Fish', 'Prawns', 'Crabs and clams', 'Dried'];
 var PACKS = { '500 g': 0.5, '1 kg': 1 };
 var MAX_QTY = 20;
 var ORDER_COLS = ['Order ID', 'Placed at', 'Window', 'Name', 'Mobile', 'Address', 'Area', 'Items', 'Subtotal', 'Delivery',
-  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token', 'Payment', 'Out at', 'Next at', 'Packed by', 'Coupon', 'Discount'];
-var STATUSES = ['New', 'Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
-var TO_DELIVER = ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Paid'];   // 'Paid' kept for orders from before the Payment column
+  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token', 'Payment', 'Out at', 'Next at', 'Packed by', 'Coupon', 'Discount', 'Pay by', 'Collected'];
+var STATUSES = ['New', 'Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
+var TO_DELIVER = ['Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next', 'Paid'];   // 'Paid' kept for orders from before the Payment column
 var SIZES = ['', 'Small to medium', 'Medium to big'];
 var STOCK_COLS = ['Lot', 'Landed', 'Fish', 'Size', 'Pieces', 'Kg bought', 'Cost per kg', 'Price per kg', 'Harbour', 'Status', 'Entered at', 'Entered by', 'Offer %'];
 var COUPON_COLS = ['Code', 'Type (% or Rs)', 'Value', 'Min order (Rs)', 'Valid till', 'Uses per mobile', 'Max uses', 'Active', 'Note'];
@@ -50,7 +50,7 @@ var SETTINGS = [
   ['Harbours (separated by commas)', 'Goa, Vengurla, Malvan, Devgad, Ratnagiri'],
   ['Packing PIN (4 to 8 digits)', '']
 ];
-var SETUP_VERSION = '2026-10-28c';   // change this when setup_ adds new tabs, columns or settings
+var SETUP_VERSION = '2026-10-28d';   // change this when setup_ adds new tabs, columns or settings
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
   address: 'House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra',
@@ -95,12 +95,13 @@ function tab_(name, cols, seed) {
 }
 function setup_() {
   ensureHeaders_(sheet_('Orders'), ORDER_COLS);
-  ensureHeaders_(sheet_('Order lines'), ['Order ID', 'Window', 'Item', 'Pack', 'Cut', 'Qty', 'Kg', 'Line total', 'Status', 'Lot', 'Size']);
+  ensureHeaders_(sheet_('Order lines'), ['Order ID', 'Window', 'Item', 'Pack', 'Cut', 'Qty', 'Kg', 'Line total', 'Status', 'Lot', 'Size', 'List price', 'Off %']);
   ensureHeaders_(sheet_('Products'), ['Yield %', 'Show kg left', 'Show origin']);
   tab_('Stock', STOCK_COLS);
   tab_('Counts', COUNT_COLS);
   tab_('Categories', CAT_COLS, CAT_SEED);
   tab_('Coupons', COUPON_COLS);
+  try { tidyOrders_(); } catch (e) {}
   var s = sheet_('Settings'), have = s.getRange(2, 1, SETTINGS.length, 1).getValues();
   SETTINGS.forEach(function (row, i) {
     var r = i + 2;
@@ -376,7 +377,7 @@ function packList_() {
     var st = String(get(v[i], 'Status')).trim(); if (st === 'Paid') st = 'Confirmed';
     if (st !== 'Confirmed' && st !== 'Packed') continue;
     var id = String(get(v[i], 'Order ID'));
-    want[id] = { id: id, status: st, window: String(get(v[i], 'Window')), name: String(get(v[i], 'Name')).split(' ')[0], area: String(get(v[i], 'Area')),
+    want[id] = { id: id, status: st, window: String(get(v[i], 'Window')),
       notes: String(get(v[i], 'Notes')), packedBy: String(get(v[i], 'Packed by') || ''), lines: [] };
     out.push(want[id]);
   }
@@ -406,7 +407,8 @@ function deliveries_() {
       mobile: String(get(r, 'Mobile')).replace(/[^0-9]/g, '').slice(-10), address: String(get(r, 'Address')),
       area: String(get(r, 'Area')), items: String(get(r, 'Items')), notes: String(get(r, 'Notes')),
       total: Number(get(r, 'Total')) || 0, final: get(r, 'Final amount') === '' ? '' : Number(get(r, 'Final amount')),
-      status: st === 'Paid' ? 'Confirmed' : st, paid: isPaid_(st, get(r, 'Payment')), map: String(get(r, 'Map') || '')
+      status: st === 'Paid' ? 'Confirmed' : st, paid: isPaid_(st, get(r, 'Payment')), map: String(get(r, 'Map') || ''),
+      payBy: String(get(r, 'Pay by') || 'On delivery')
     });
   }
   out.sort(function (a, b) { return (a.area || '').localeCompare(b.area || '') || a.name.localeCompare(b.name); });
@@ -433,7 +435,7 @@ function myOrders_(ids) {
     out.push({
       id: id, status: String(get(v[i], 'Status')).trim() || 'New', window: String(get(v[i], 'Window')),
       total: Number(get(raw[i], 'Total')) || 0, final: get(raw[i], 'Final amount') === '' ? '' : Number(get(raw[i], 'Final amount')),
-      bill: String(get(v[i], 'Bill') || '') ? 'yes' : '', discount: Number(get(raw[i], 'Discount')) || 0, deliveredAt: String(get(v[i], 'Delivered at') || ''),
+      bill: String(get(v[i], 'Bill') || '') ? 'yes' : '', discount: Number(get(raw[i], 'Discount')) || 0, payBy: String(get(v[i], 'Pay by') || ''), deliveredAt: String(get(v[i], 'Delivered at') || ''),
       paid: isPaid_(get(v[i], 'Status'), get(v[i], 'Payment')),
       outAt: String(get(v[i], 'Out at') || ''), nextAt: String(get(v[i], 'Next at') || ''),
       rider: ['Out for delivery', 'Arriving next'].indexOf(String(get(v[i], 'Status')).trim()) > -1 ? rider : ''
@@ -456,7 +458,7 @@ function doGet(e) {
     if (st.roles.indexOf('packing') > -1) res.pack = packList_();
     return json_(res);
   }
-  if (p.action === 'coupon') return json_(couponCheck_(p.code, p.phone, Number(p.sub) || 0));
+  if (p.action === 'coupon') return json_(couponCheck_(p.code, p.phone, Number(p.sub) || 0, p.elig === undefined ? undefined : Number(p.elig) || 0));
   if (p.action === 'bill') return json_(customerBill_(String(p.id || ''), String(p.t || '')));
   var cache = CacheService.getScriptCache(), hit = cache.get('shop');
   if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
@@ -479,7 +481,7 @@ function doPost(e) {
   try {
     bust_();
     var o = JSON.parse(e.postData.contents);
-    if (['delivered', 'start', 'next', 'packed', 'unpack'].indexOf(o.action) > -1) return json_(stage_(o));
+    if (['delivered', 'start', 'next', 'packed', 'unpack', 'collect', 'uncollect'].indexOf(o.action) > -1) return json_(stage_(o));
     if (o.action === 'admin') return json_(admin_(o));
     return json_(placeOrder_(o));
   } catch (err) {
@@ -512,8 +514,14 @@ function stage_(o) {
       if (cur !== 'Packed') continue;
       sh.getRange(row, c['Status']).setValue('Confirmed');
       if (c['Packed by']) sh.getRange(row, c['Packed by']).setValue('');
+    } else if (o.action === 'collect') {
+      if (cur !== 'Packed') continue;
+      sh.getRange(row, c['Status']).setValue('Collected');
+    } else if (o.action === 'uncollect') {
+      if (cur !== 'Collected') continue;
+      sh.getRange(row, c['Status']).setValue('Packed');
     } else if (o.action === 'start') {
-      if (['Confirmed', 'Packed'].indexOf(cur) === -1) continue;
+      if (cur !== 'Collected') continue;
       sh.getRange(row, c['Status']).setValue('Out for delivery');
       sh.getRange(row, c['Out at']).setNumberFormat('@').setValue(time);
     } else if (o.action === 'next') {
@@ -524,6 +532,10 @@ function stage_(o) {
     } else {
       sh.getRange(row, c['Status']).setValue('Delivered');
       sh.getRange(row, c['Delivered at']).setNumberFormat('@').setValue(time);
+      if (o.method === 'Cash' || o.method === 'UPI') {
+        sh.getRange(row, c['Payment']).setValue('Paid');
+        if (c['Collected']) sh.getRange(row, c['Collected']).setNumberFormat('@').setValue(o.method + ' ' + Math.round(Number(o.amount) || 0));
+      }
     }
     done++;
   }
@@ -556,7 +568,7 @@ function placeOrder_(o) {
     var k = p.name + '#' + opt.key;
     want[k] = (want[k] || 0) + kgPer * qty;
     var cut = p.cuts.indexOf(String(it.cut)) > -1 ? String(it.cut) : p.cuts[0];
-    lines.push({ name: p.name, size: opt.size, pack: it.pack, cut: cut, qty: qty, kg: kgPer * qty, total: opt.price * kgPer * qty, opt: opt });
+    lines.push({ name: p.name, size: opt.size, pack: it.pack, cut: cut, qty: qty, kg: kgPer * qty, total: opt.price * kgPer * qty, price: opt.price, base: opt.base, off: opt.off || 0, opt: opt });
   });
   Object.keys(want).forEach(function (k) {
     var name = k.split('#')[0], key = k.slice(name.length + 1), opt = byName[name].options.filter(function (x) { return x.key === key; })[0];
@@ -577,10 +589,12 @@ function placeOrder_(o) {
   var sub = lines.reduce(function (a, l) { return a + l.total; }, 0);
   var fee = deliveryFee_(), cpn = null;
   if (cleanCode_(o.coupon)) {
-    cpn = couponCheck_(o.coupon, phone, sub);
+    var elig = lines.reduce(function (a, l) { return a + (l.off ? 0 : l.total); }, 0);
+    cpn = couponCheck_(o.coupon, phone, sub, elig);
     if (!cpn.ok) return { ok: false, error: 'coupon', reason: cpn.error, min: cpn.min || 0 };
   }
   var disc = cpn ? cpn.discount : 0;
+  var payBy = o.payBy === 'now' && String(setting_('UPI ID')).trim() ? 'Now (UPI)' : 'On delivery';
   var orders = sheet_('Orders'), c = colIndex_(orders), width = orders.getLastColumn();
   var id = 'BL' + Utilities.formatDate(new Date(), TZ, 'ddMM') + '-' + ('00' + orders.getLastRow()).slice(-3);
   var placed = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a');
@@ -589,7 +603,7 @@ function placeOrder_(o) {
 
   var values = {
     'Order ID': id, 'Placed at': placed, 'Window': w, 'Name': name, 'Mobile': phone, 'Address': address, 'Area': area,
-    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub - disc + fee, 'Status': 'New', 'Coupon': cpn ? cpn.code : '', 'Discount': disc || '', 'Notes': notes, 'Map': map, 'Token': token, 'Payment': 'Unpaid'
+    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub - disc + fee, 'Status': 'New', 'Coupon': cpn ? cpn.code : '', 'Discount': disc || '', 'Pay by': payBy, 'Notes': notes, 'Map': map, 'Token': token, 'Payment': 'Unpaid'
   };
   var row = orders.getLastRow() + 1, out = [];
   for (var i = 1; i <= width; i++) out.push('');
@@ -606,14 +620,14 @@ function placeOrder_(o) {
     put('Order ID', id); put('Window', w); put('Item', pt.line.name); put('Pack', pt.line.pack); put('Cut', pt.line.cut);
     put('Qty', whole ? pt.line.qty : ''); put('Kg', pt.kg); put('Line total', Math.round(pt.line.total * pt.kg / pt.line.kg));
     put('Status', '=IFERROR(INDEX(Orders!$L:$L,MATCH($A' + (start + i) + ',Orders!$A:$A,0)),"")');
-    put('Lot', pt.lot); put('Size', pt.line.size);
+    put('Lot', pt.lot); put('Size', pt.line.size); if (pt.line.off) { put('List price', pt.line.base); put('Off %', pt.line.off); }
     return r;
   });
   ol.getRange(start, 1, rowsOut.length, 2).setNumberFormat('@');
   ol.getRange(start, 1, rowsOut.length, ow).setValues(rowsOut);
 
   return { ok: true, id: id, token: token, window: w, delivery: { date: shop.plan.date, sameDay: shop.plan.sameDay, today: shop.plan.today },
-    schedule: { start: hhmm_(shop.sc.start), end: hhmm_(shop.sc.end) }, subtotal: sub, fee: fee, discount: disc, coupon: cpn ? cpn.code : '', total: sub - disc + fee, lines: lines };
+    schedule: { start: hhmm_(shop.sc.start), end: hhmm_(shop.sc.end) }, subtotal: sub, fee: fee, discount: disc, coupon: cpn ? cpn.code : '', payBy: payBy, total: sub - disc + fee, lines: lines };
 }
 
 // ---------- Blio Admin app ----------
@@ -654,7 +668,8 @@ function adminOrders_() {
       total: Number(g(raw[i], 'Total')) || 0, final: g(raw[i], 'Final amount') === '' ? '' : Number(g(raw[i], 'Final amount')),
       status: st === 'Paid' ? 'Confirmed' : st, paid: isPaid_(st, g(disp[i], 'Payment')), map: String(g(disp[i], 'Map') || ''),
       bill: String(g(disp[i], 'Bill') || ''), outAt: String(g(disp[i], 'Out at') || ''), deliveredAt: String(g(disp[i], 'Delivered at') || ''),
-      coupon: String(g(disp[i], 'Coupon') || ''), discount: Number(g(raw[i], 'Discount')) || 0, packedBy: String(g(disp[i], 'Packed by') || '')
+      coupon: String(g(disp[i], 'Coupon') || ''), discount: Number(g(raw[i], 'Discount')) || 0, packedBy: String(g(disp[i], 'Packed by') || ''),
+      payBy: String(g(disp[i], 'Pay by') || ''), collected: String(g(disp[i], 'Collected') || '')
     });
   }
   return out;
@@ -831,7 +846,9 @@ function couponUses_(code, phone) {
   return { all: all, mine: mine };
 }
 /** Checks a code for this mobile and subtotal. The discount never goes above the subtotal. */
-function couponCheck_(code, phone, sub) {
+/** sub is the whole subtotal (for the minimum order); elig is the part not already on offer, which is all the coupon takes off. */
+function couponCheck_(code, phone, sub, elig) {
+  if (elig === undefined || elig === null || isNaN(elig)) elig = sub;
   code = cleanCode_(code); phone = String(phone || '').replace(/[^0-9]/g, '').slice(-10);
   if (!code) return { ok: false, error: 'nocode' };
   var cp = coupons_().filter(function (x) { return x.code === code; })[0];
@@ -841,8 +858,9 @@ function couponCheck_(code, phone, sub) {
   var used = couponUses_(code, phone);
   if (cp.max && used.all >= cp.max) return { ok: false, error: 'limit' };
   if (cp.perPhone && phone.length === 10 && used.mine >= cp.perPhone) return { ok: false, error: 'used' };
-  var off = cp.type === '%' ? Math.round(sub * Math.min(cp.value, 90) / 100) : Math.round(cp.value);
-  off = Math.max(0, Math.min(off, sub));
+  if (!(elig > 0)) return { ok: false, error: 'offeronly' };
+  var off = cp.type === '%' ? Math.round(elig * Math.min(cp.value, 90) / 100) : Math.round(cp.value);
+  off = Math.max(0, Math.min(off, elig));
   return { ok: true, code: code, discount: off, label: cp.type === '%' ? cp.value + '% off' : rupee_(cp.value) + ' off', min: cp.min };
 }
 function saveCoupon_(o, by) {
@@ -987,7 +1005,9 @@ function billFor_(sh, row) {
 
   var disc = Number(get('Discount')) || 0, code = String(get('Coupon') || '');
   var rowsHtml = lines.map(function (l, i) {
-    return '<tr><td>' + (i + 1) + '</td><td>' + esc_(l['item']) + '<br><span class="s">' + (l['size'] ? esc_(l['size']) + ', ' : '') + esc_(l['pack']) + ', ' + esc_(l['cut']) + '</span></td>' +
+    var lo = Number(l['off %']) || 0;
+    return '<tr><td>' + (i + 1) + '</td><td>' + esc_(l['item']) + '<br><span class="s">' + (l['size'] ? esc_(l['size']) + ', ' : '') + esc_(l['pack']) + ', ' + esc_(l['cut']) +
+      (lo ? '<br>' + lo + '% offer, list price ' + inr_(l['list price']) + '/kg' : '') + '</span></td>' +
       '<td class="n">' + esc_(l['qty']) + '</td><td class="n">' + esc_(l['kg']) + ' kg</td><td class="n">' + inr_(l['line total']) + '</td></tr>';
   }).join('');
 
@@ -1004,12 +1024,13 @@ function billFor_(sh, row) {
     '<td><b>Billed to</b><br>' + esc_(get('Name')) + '<br>' + esc_(mobile) + '<br>' + esc_(get('Address')) + (get('Area') ? ', ' + esc_(get('Area')) : '') + '</td></tr></table>' +
     '<table><tr><th>#</th><th>Item</th><th class="n">Qty</th><th class="n">Weight</th><th class="n">Amount</th></tr>' + rowsHtml + '</table>' +
     '<table class="tot"><tr><td class="n" style="width:80%">Subtotal</td><td class="n">' + inr_(sub) + '</td></tr>' +
-    (disc ? '<tr><td class="n">Coupon ' + esc_(code) + '</td><td class="n">-' + inr_(disc) + '</td></tr>' : '') +
+    (disc ? '<tr><td class="n">Coupon ' + esc_(code) + (lines.some(function (l) { return Number(l['off %']) > 0; }) ? ' (not on offer items)' : '') + '</td><td class="n">-' + inr_(disc) + '</td></tr>' : '') +
     '<tr><td class="n">Delivery</td><td class="n">' + inr_(fee) + '</td></tr>' +
     (adjust ? '<tr><td class="n">Adjustment for actual weight</td><td class="n">' + (adjust < 0 ? '-' : '') + inr_(Math.abs(adjust)) + '</td></tr>' : '') +
     '<tr class="big"><td class="n">Amount payable</td><td class="n">' + inr_(payable) + '</td></tr></table>' +
-    '<p style="margin-top:18px">' + (isPaid_(get('Status'), get('Payment')) ? '<b>Paid.</b> Thank you.' : (upi ? 'Pay by UPI to <b>' + esc_(upi) + '</b>.' : 'Payment by UPI.')) + '</p>' +
-    '<p class="s">This is not a GST tax invoice. Prices are per kg of whole fish, weighed before cleaning.</p></body></html>';
+    '<p style="margin-top:18px">' + (isPaid_(get('Status'), get('Payment')) ? '<b>Paid' + (get('Collected') ? ' (' + esc_(String(get('Collected')).split(' ')[0]) + ' on delivery)' : '') + '.</b> Thank you.'
+      : (String(get('Pay by')) === 'Now (UPI)' ? (upi ? 'Pay by UPI to <b>' + esc_(upi) + '</b>.' : 'Payment by UPI.') : 'Pay on delivery, by cash or UPI' + (upi ? ' to <b>' + esc_(upi) + '</b>' : '') + '.')) + '</p>' +
+    '<p class="s">This is not a GST tax invoice. Prices are per kg of whole fish, weighed before cleaning. Coupons don’t apply to items already on offer.</p></body></html>';
 
   var pdf = Utilities.newBlob(html, 'text/html', id + '.html').getAs('application/pdf').setName('Blio bill ' + id + '.pdf');
   var file = billsFolder_().createFile(pdf);   // stays private in the company Drive

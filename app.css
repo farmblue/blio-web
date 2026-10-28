@@ -402,3 +402,13 @@ a{color:inherit}
 .agrid .span2{grid-column:1 / -1}
 .ptag.offer{background:#F2C94C;color:var(--ink)}
 .ptag.loss{background:#F6D3C9;color:var(--warn)}
+.line .a small.loff{color:var(--action);font-weight:600}
+s.was{font-weight:500;opacity:.55;margin-right:6px}
+.why{margin-top:72px;display:flex;flex-direction:column;gap:18px}
+.why h2{margin:0;font-size:40px;line-height:.95}
+.whyl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.whyl li{display:flex;gap:14px;align-items:flex-start;background:var(--raised);padding:16px}
+.whyl .wn{flex:0 0 auto;width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:var(--action);color:#fff;font-weight:700;font-size:15px}
+.whyl b{display:block;font-size:17px;font-weight:600;margin-bottom:3px}
+.whyl li > span:last-child > span{font-size:15px;line-height:1.45;color:var(--body-g)}
+.dcard .linkbtn.dk{align-self:center;color:var(--muted)}

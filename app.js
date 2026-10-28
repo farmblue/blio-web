@@ -150,7 +150,7 @@
       var p = S.products.filter(function (x) { return x.name === l.name; })[0];
       var o = p && (optOf(p, l.opt) || p.options.filter(function (x) { return x.size === (l.size || ''); })[0]);
       if (!o) { dropped.push(l.name + (l.size ? ' (' + l.size + ')' : '')); return false; }
-      l.id = p.id; l.opt = o.key; l.size = o.size; l.price = o.price; l.key = lineKey(p, o, l.pack, l.cut);
+      l.id = p.id; l.opt = o.key; l.size = o.size; l.price = o.price; l.off = o.off || 0; l.base = o.base || o.price; l.key = lineKey(p, o, l.pack, l.cut);
       if (byKey[l.key]) { byKey[l.key].qty += l.qty; return false; }
       byKey[l.key] = l; return true;
     });
@@ -187,6 +187,16 @@
       .then(function (d) { S.billBusy = ''; if (d.ok) { S.billFiles[id] = b64File(d.b64, d.name); } else { S.ordErr = 'The bill for ' + id + ' isn’t ready yet. Ask us on WhatsApp.'; } keepScroll(); })
       .catch(function () { S.billBusy = ''; S.ordErr = 'No connection. Couldn’t get the bill.'; keepScroll(); });
   }
+  function payNow() { return S.form.payBy === 'now' && !!S.upi; }
+  function payChoiceHtml() {
+    if (!S.upi) { return ''; }
+    var now = payNow();
+    return '<div class="fld"><span class="lab" style="font-size:16px">Payment</span>' +
+      '<div class="seg dark" data-on="' + (now ? 1 : 0) + '"><span class="ind"></span>' +
+      '<button data-act="payby" data-v="delivery" aria-pressed="' + !now + '">Pay on delivery</button>' +
+      '<button data-act="payby" data-v="now" aria-pressed="' + now + '">Pay now (UPI)</button></div>' +
+      '<span class="hint">' + (now ? 'You pay by UPI right after placing the order.' : 'Pay the delivery person by cash or UPI.') + '</span></div>';
+  }
   function lineLabel(l) { return (l.size ? l.size + ' · ' : '') + l.pack + ' · ' + l.cut; }
   function reqUrl(name) {
     return 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent('Hi Blio, I would like to request ' + (name || 'a fish') + '. Quantity: ');
@@ -198,23 +208,25 @@
     var sub = S.cart.reduce(function (a, l) { return a + l.price * kgOf(l.pack) * l.qty; }, 0);
     var fee = S.form.fulfil === 'delivery' && sub > 0 ? CONFIG.deliveryFee : 0;
     var count = S.cart.reduce(function (a, l) { return a + l.qty; }, 0);
-    var disc = S.coupon && S.coupon.sub === sub ? S.coupon.discount : 0;
-    if (S.coupon && S.coupon.sub !== sub && sub > 0 && !S.cChecking) { setTimeout(function () { applyCoupon(S.coupon && S.coupon.code); }, 0); }
+    var elig = S.cart.reduce(function (a, l) { return a + (l.off ? 0 : l.price * kgOf(l.pack) * l.qty); }, 0), ck = sub + '|' + elig;
+    var disc = S.coupon && S.coupon.sub === ck ? S.coupon.discount : 0;
+    if (S.coupon && S.coupon.sub !== ck && sub > 0 && !S.cChecking) { setTimeout(function () { applyCoupon(S.coupon && S.coupon.code); }, 0); }
     return { sub: sub, fee: fee, disc: disc, total: sub - disc + fee, count: count };
   }
-  var COUPON_ERR = { nocode: 'That code isn’t valid.', expired: 'That code has expired.', used: 'This code has already been used with this mobile number.',
+  var COUPON_ERR = { offeronly: 'Everything on your slip is already on offer, and coupons don’t apply to offer items.', nocode: 'That code isn’t valid.', expired: 'That code has expired.', used: 'This code has already been used with this mobile number.',
     limit: 'This code has been fully used.' };
   function couponMsg(d) { return d.error === 'min' ? 'This code needs an order of at least ' + rs(d.min) + '.' : (COUPON_ERR[d.error] || 'Couldn’t check the code. Try again.'); }
   function applyCoupon(code) {
     code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!code || !CONFIG.api) { return; }
     var sub = S.cart.reduce(function (a, l) { return a + l.price * kgOf(l.pack) * l.qty; }, 0);
+    var elig = S.cart.reduce(function (a, l) { return a + (l.off ? 0 : l.price * kgOf(l.pack) * l.qty); }, 0);
     S.cChecking = true; S.cErr = ''; if (S.screen === 'slip') { keepScroll(); }
-    fetch(CONFIG.api + '?action=coupon&code=' + encodeURIComponent(code) + '&phone=' + encodeURIComponent(S.form.phone || '') + '&sub=' + Math.round(sub), { cache: 'no-store' })
+    fetch(CONFIG.api + '?action=coupon&code=' + encodeURIComponent(code) + '&phone=' + encodeURIComponent(S.form.phone || '') + '&sub=' + Math.round(sub) + '&elig=' + Math.round(elig), { cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         S.cChecking = false;
-        if (d.ok) { S.coupon = { code: d.code, discount: d.discount, label: d.label, sub: sub }; } else { S.coupon = null; S.cErr = code + ': ' + couponMsg(d); }
+        if (d.ok) { S.coupon = { code: d.code, discount: d.discount, label: d.label, sub: sub + '|' + elig, partial: elig < sub }; } else { S.coupon = null; S.cErr = code + ': ' + couponMsg(d); }
         if (S.screen === 'slip') { keepScroll(); }
       })
       .catch(function () { S.cChecking = false; S.cErr = 'No connection. The code wasn’t checked.'; if (S.screen === 'slip') { keepScroll(); } });
@@ -237,6 +249,18 @@
     cats.forEach(function (c) { seen[c.name] = 1; });
     S.products.forEach(function (p) { if (!seen[p.group]) { seen[p.group] = 1; cats.push({ name: p.group, mr: '' }); } });
     return cats;
+  }
+  function whyHtml() {
+    var items = [
+      ['Fresh from the auction', 'Bought at the morning auction. Each fish shows the harbour and the day it landed.'],
+      ['Cleaned in a clean room', 'Cleaned and cut in our own dedicated room, on steel tables, with gloves.'],
+      ['A fair, fixed price', 'The price per kg is shown before you order. No bargaining, no surprise rates.'],
+      ['Packed properly', 'Food-grade bags, kept cold with ice or gel packs in an insulated box.'],
+      ['To your door, on time', 'Order by ' + fmtT(sched().cutoff) + ' and it reaches you the same evening, ' + range() + '. Track it in My orders.']
+    ];
+    return '<section class="why"><h2 class="anton">Why Blio</h2><ol class="whyl">' + items.map(function (x, i) {
+      return '<li><span class="wn num">' + (i + 1) + '</span><span><b>' + x[0] + '</b><span>' + x[1] + '</span></span></li>';
+    }).join('') + '</ol></section>';
   }
   function offersHtml() {
     var list = [];
@@ -297,6 +321,7 @@
         '<div class="groups">' + groups + '</div>' +
         '<a class="reqlink" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener"><b>Don’t see your fish?</b><span>Request it on WhatsApp and we’ll look for it at the next auction.</span></a></section>'
         : '<div class="box chbox" style="margin-top:24px"><span>' + (S.pending ? 'This page checks for the catch every minute.' : 'Check again for new catch.') + '</span>' + reloadBtn() + '</div>') +
+      whyHtml() +
       '<section class="how"><h2 class="anton">Boat to door</h2><div class="rail-bar"><span id="railbar"></span></div>' +
       '<div class="rail" id="rail">' +
         step('Bought at the auction', 'Early morning at the harbour, from boats in North Goa and on the Konkan coast.', 32, '#C2462A', '<svg width="200" height="150" viewBox="0 0 200 150" aria-hidden="true"><rect x="0" y="112" width="200" height="38" fill="#2456A6"/><path d="M14 84h172l-22 34H36z" fill="#ECE6D6"/><rect x="92" y="40" width="44" height="44" fill="#12272C"/><rect x="100" y="48" width="12" height="12" fill="#ECE6D6"/><rect x="62" y="22" width="5" height="62" fill="#12272C"/></svg>') +
@@ -348,7 +373,7 @@
     for (i = 0; i <= teeth; i++) { pts.push((i / teeth * 100).toFixed(2) + '% ' + (i % 2 ? '0px' : '8px')); }
     for (i = teeth; i >= 0; i--) { pts.push((i / teeth * 100).toFixed(2) + '% ' + (i % 2 ? '100%' : 'calc(100% - 8px)')); }
     var lines = S.cart.map(function (l, idx) {
-      return '<div class="line"><div class="a"><span class="t"><b>' + esc(l.name) + '</b><small>' + esc(lineLabel(l)) + '</small></span>' +
+      return '<div class="line"><div class="a"><span class="t"><b>' + esc(l.name) + '</b><small>' + esc(lineLabel(l)) + '</small>' + (l.off ? '<small class="loff">' + l.off + '% offer · was ' + rs(l.base) + '/kg</small>' : '') + '</span>' +
         '<span class="tot num">' + rs(l.price * kgOf(l.pack) * l.qty) + '</span></div>' +
         '<div class="b"><div class="qty"><button class="press" data-act="ldec" data-i="' + idx + '" aria-label="One less">−</button><span class="num">' + l.qty + '</span>' +
         '<button class="press" data-act="linc" data-i="' + idx + '" aria-label="One more">+</button></div>' +
@@ -383,14 +408,16 @@
           '<span class="hint">Optional, but it helps our delivery person find your door.</span></div>'
         : '<div class="box">Collect from the Blio cleaning point in Kolhapur, ' + esc(w.delivery) + ', ' + range() + '. We share the exact location on WhatsApp.</div>') +
       '<div class="fld"><label for="f-notes">Notes (optional)</label><input id="f-notes" data-f="notes" placeholder="Cleaning preferences, timing" value="' + esc(f.notes) + '"></div>' +
-      (S.coupon ? '<div class="cpon"><span><b>' + esc(S.coupon.code) + '</b> applied · ' + esc(S.coupon.label) + (S.cChecking ? ' · checking…' : '') + '</span><button class="linkbtn" data-act="cremove">Remove</button></div>'
+      (S.coupon ? '<div class="cpon"><span><b>' + esc(S.coupon.code) + '</b> applied · ' + esc(S.coupon.label) + (S.coupon.partial ? ' on items not on offer' : '') + (S.cChecking ? ' · checking…' : '') + '</span><button class="linkbtn" data-act="cremove">Remove</button></div>'
         : '<div class="fld"><label for="f-coupon">Coupon code (optional)</label><div class="crow2"><input id="f-coupon" autocapitalize="characters" autocomplete="off" placeholder="Enter code" value="' + esc(S.cDraft || '') + '">' +
           '<button class="btn dark press" data-act="capply"' + (S.cChecking ? ' disabled' : '') + '>' + (S.cChecking ? 'Checking…' : 'Apply') + '</button></div>' +
-          (S.cErr ? '<span class="err">' + esc(S.cErr) + '</span>' : '') + '</div>') +
+          (S.cErr ? '<span class="err">' + esc(S.cErr) + '</span>' : '') +
+          '<span class="hint">Coupons don’t apply to items already on offer.</span></div>') +
+      payChoiceHtml() +
       (S.short ? '<div class="box warn" role="alert">' + esc(S.short) + '</div>' : '') +
       (e.server ? '<div class="box warn" role="alert">We couldn’t place the order. Check your internet connection and try again.</div>' : '') +
       '<button class="btn big press" data-act="send"' + (S.sending ? ' disabled' : '') + '>' + (S.sending ? 'Placing your order…' : 'Place order') + '</button>' +
-      '<span class="muted-g">Next you send the order to us on WhatsApp. You pay by UPI after we confirm the final bill.</span>' +
+      '<span class="muted-g">Next you send the order to us on WhatsApp. ' + (payNow() ? 'Then pay by UPI. If the weight changes the bill a little, we settle the difference at delivery.' : 'You pay at delivery, by cash or UPI.') + '</span>' +
       '</div>';
   }
 
@@ -398,8 +425,9 @@
     var o = S.last || {};
     return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="ticket">' +
       '<div class="in"><h1 class="anton" style="font-size:96px;line-height:.84">Placed</h1>' +
-      '<p>Order ' + esc(o.id) + ' for ' + rs(o.total || 0) + '. One last step: send it to us on WhatsApp so we can confirm the bill and share the UPI request.</p>' +
-      '<a class="btn big press" href="' + esc(o.url) + '" target="_blank" rel="noopener">Send on WhatsApp</a></div>' +
+      '<p>Order ' + esc(o.id) + ' for ' + rs(o.total || 0) + '. ' + (o.payBy === 'Now (UPI)' && S.upi ? 'Send it to us on WhatsApp, then pay by UPI.' : 'One last step: send it to us on WhatsApp so we can confirm it. You pay at delivery.') + '</p>' +
+      '<a class="btn big press" href="' + esc(o.url) + '" target="_blank" rel="noopener">Send on WhatsApp</a>' +
+      (o.payBy === 'Now (UPI)' && S.upi ? '<a class="btn big dark press" href="#pay?o=' + encodeURIComponent(o.id) + '&a=' + Math.round(o.total || 0) + '">Pay ' + rs(o.total || 0) + ' by UPI</a>' : '') + '</div>' +
       '<div class="perf"></div><div style="padding:18px 22px 24px;display:flex;flex-direction:column;gap:12px">' +
       '<span class="note">Delivered ' + esc(o.delivery) + ', ' + range() + '</span>' +
       progressHtml(0) + '</div></div>' +
@@ -408,7 +436,7 @@
   }
 
   // ---------- my orders ----------
-  var STEP_OF = { 'New': 0, 'Confirmed': 1, 'Paid': 1, 'Packed': 2, 'Out for delivery': 3, 'Arriving next': 3, 'Delivered': 4 };
+  var STEP_OF = { 'New': 0, 'Confirmed': 1, 'Paid': 1, 'Packed': 2, 'Collected': 2, 'Out for delivery': 3, 'Arriving next': 3, 'Delivered': 4 };
   var STEP_LABELS = ['Placed', 'Accepted', 'Packed', 'On the way', 'Delivered'];
   function progressHtml(step) {
     return '<div class="progress p5">' + STEP_LABELS.map(function (l, i) { return '<span' + (i <= step ? ' class="on"' : '') + '></span>'; }).join('') + '</div>' +
@@ -429,7 +457,7 @@
           S.myorders.forEach(function (o) {
             var x = by[o.id]; if (!x) { return; }
             o.status = x.status; o.final = x.final; o.bill = x.bill; o.deliveredAt = x.deliveredAt; o.total = x.total || o.total;
-            o.paid = !!x.paid; o.outAt = x.outAt || ''; o.nextAt = x.nextAt || ''; o.rider = x.rider || '';
+            o.paid = !!x.paid; if (x.payBy) { o.payBy = x.payBy; } o.outAt = x.outAt || ''; o.nextAt = x.nextAt || ''; o.rider = x.rider || '';
           });
           store('myorders', S.myorders);
         } else { S.ordErr = 'Couldn’t check the latest status. Showing what was last seen.'; }
@@ -446,15 +474,16 @@
       'New': 'Placed. We confirm it on WhatsApp with the final bill.',
       'Confirmed': 'Confirmed. Your fish is set aside and cleaned for delivery ' + (o.dDate ? evening(o.dDate) : (o.delivery || '') + ' evening') + '.',
       'Packed': 'Packed and ready. It leaves for delivery soon.',
+      'Collected': 'Packed and with our delivery person. It leaves soon.',
       'Out for delivery': 'Out for delivery' + (o.outAt ? ' since ' + timeOf(o.outAt) : '') + '. Arriving ' + range() + '.',
       'Arriving next': 'You’re next. Arriving in about 15 minutes.',
       'Delivered': 'Delivered' + (o.deliveredAt ? ' at ' + timeOf(o.deliveredAt) : '') + '.',
       'Cancelled': 'This order was cancelled.'
     }[st] || st;
     var onWay = st === 'Out for delivery' || st === 'Arriving next';
-    var payTag = st === 'New' || st === 'Cancelled' ? '' : (paid ? '<span class="ptag paid">Paid</span>' : '<span class="ptag">Not paid yet</span>');
+    var payTag = st === 'New' || st === 'Cancelled' ? '' : (paid ? '<span class="ptag paid">Paid</span>' : '<span class="ptag">' + (o.payBy === 'On delivery' ? 'Pay on delivery' : 'Not paid yet') + '</span>');
     var items = (o.lines || []).map(function (l) { return esc(l.name) + (l.size ? ' (' + esc(l.size.toLowerCase()) + ')' : '') + ' ' + esc(l.pack) + (l.qty > 1 ? ' x' + l.qty : ''); }).join(', ');
-    var canPay = !paid && S.upi && ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next'].indexOf(st) > -1;
+    var canPay = !paid && S.upi && ['Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next'].indexOf(st) > -1;
     return '<div class="ocard' + (st === 'Cancelled' ? ' cancelled' : '') + (st === 'Arriving next' ? ' next' : '') + '">' +
       '<div class="dtop"><b>' + esc(o.id) + '</b><span class="num">' + rs(amount) + '</span></div>' +
       '<span class="dsub">' + when + ' · for ' + esc(o.dDate ? dLabel(o.dDate) : (o.delivery || '')) + payTag + '</span>' +
@@ -492,7 +521,7 @@
       if (!op) { missed.push(l.name + (l.size ? ' (' + l.size.toLowerCase() + ')' : '')); return; }
       var cut = p.cuts.indexOf(l.cut) > -1 ? l.cut : p.cuts[0], key = lineKey(p, op, l.pack, cut);
       var hit = S.cart.filter(function (c) { return c.key === key; })[0];
-      if (hit) { hit.qty += l.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, opt: op.key, size: op.size, pack: l.pack, cut: cut, qty: l.qty, price: op.price }); }
+      if (hit) { hit.qty += l.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, opt: op.key, size: op.size, pack: l.pack, cut: cut, qty: l.qty, price: op.price, off: op.off || 0, base: op.base || op.price }); }
       added++;
     });
     saveCart();
@@ -582,15 +611,15 @@
   }
   function waText(o, f) {
     var msg = ['Blio order ' + o.id, 'Delivery: ' + dLabel(o.dDate) + ', ' + range(), ''];
-    o.lines.forEach(function (l, i) { msg.push((i + 1) + '. ' + l.name + (l.size ? ' (' + l.size + ')' : '') + ', ' + l.pack + ', ' + l.cut + ' x' + l.qty + ' = ' + rs(l.total)); });
+    o.lines.forEach(function (l, i) { msg.push((i + 1) + '. ' + l.name + (l.size ? ' (' + l.size + ')' : '') + ', ' + l.pack + ', ' + l.cut + ' x' + l.qty + ' = ' + rs(l.total) + (l.off ? ' (' + l.off + '% offer)' : '')); });
     msg.push('', 'Subtotal: ' + rs(o.subtotal));
-    if (o.discount) { msg.push('Coupon ' + o.coupon + ': -' + rs(o.discount)); }
+    if (o.discount) { msg.push('Coupon ' + o.coupon + (o.lines.some(function (l) { return l.off; }) ? ' (not on offer items)' : '') + ': -' + rs(o.discount)); }
     msg.push('Delivery: ' + rs(o.fee), 'Estimated total: ' + rs(o.total), '');
     msg.push('Name: ' + f.name.trim(), 'Mobile: ' + f.phone);
     msg.push('Address: ' + f.address.trim().replace(/\s*\n\s*/g, ', ') + (f.area.trim() ? ', ' + f.area.trim() : ''));
     if (f.lat) { msg.push('Location: https://maps.google.com/?q=' + f.lat + ',' + f.lng); }
     if (f.notes.trim()) { msg.push('Notes: ' + f.notes.trim()); }
-    msg.push('Payment: UPI after confirmation');
+    msg.push('Payment: ' + (o.payBy === 'Now (UPI)' ? 'paying now by UPI' : 'on delivery, cash or UPI'));
     return msg.join('\n');
   }
   function finish(o) {
@@ -598,7 +627,7 @@
     o.dDate = (o.delivery && o.delivery.date) || plan().date;
     o.url = 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent(waText(o, f));
     o.delivery = evening(o.dDate);
-    S.myorders.unshift({ id: o.id, token: o.token || '', placedAt: Date.now(), dDate: o.dDate,
+    S.myorders.unshift({ id: o.id, token: o.token || '', placedAt: Date.now(), dDate: o.dDate, payBy: o.payBy || '',
       lines: o.lines, total: o.total, final: '', status: 'New', bill: '' });
     S.myorders = S.myorders.slice(0, 50); store('myorders', S.myorders);
     S.last = o; S.cart = []; saveCart(); S.form.notes = ''; saveForm(); S.sending = false; S.short = null; S.coupon = null; S.cErr = ''; S.cDraft = '';
@@ -621,10 +650,10 @@
     }
     S.sending = true; keepScroll();
     fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines, coupon: S.coupon ? S.coupon.code : '' }) })
+      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines, coupon: S.coupon ? S.coupon.code : '', payBy: payNow() ? 'now' : 'delivery' }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, discount: d.discount || 0, coupon: d.coupon || '', total: d.total, delivery: d.delivery }); return; }
+        if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, discount: d.discount || 0, coupon: d.coupon || '', total: d.total, delivery: d.delivery, payBy: d.payBy || '' }); return; }
         S.sending = false;
         if (d.error === 'coupon') {
           S.cErr = (S.coupon ? S.coupon.code + ': ' : '') + couponMsg({ error: d.reason, min: d.min }) + ' Remove it or try another code.';
@@ -709,7 +738,7 @@
       .catch(function () { S.dBusy = ''; S.dErr = 'No connection. ' + failMsg; keepScroll(); });
   }
   function startDelivery() {
-    var ids = (S.deliv || []).filter(function (o) { return o.status === 'Confirmed' || o.status === 'Packed'; }).map(function (o) { return o.id; });
+    var ids = (S.deliv || []).filter(function (o) { return o.status === 'Collected'; }).map(function (o) { return o.id; });
     if (!ids.length) { return; }
     if (!S.dStartConfirm) { S.dStartConfirm = true; keepScroll(); return; }
     S.dStartConfirm = false; S.dBusy = 'start'; keepScroll();
@@ -717,17 +746,24 @@
       S.deliv.forEach(function (o) { if (ids.indexOf(o.id) > -1) { o.status = 'Out for delivery'; } });
     }, 'Couldn’t start the delivery. Try again.');
   }
+  function collect(id, undo) {
+    var o = (S.deliv || []).filter(function (x) { return x.id === id; })[0]; if (!o) { return; }
+    o.saving = true; keepScroll();
+    riderPost({ action: undo ? 'uncollect' : 'collect', id: id }, function () { o.saving = false; o.status = undo ? 'Packed' : 'Collected'; }, 'Couldn’t update ' + id + '. Refresh and try again.');
+  }
   function nextStop(id) {
     var o = (S.deliv || []).filter(function (x) { return x.id === id; })[0]; if (!o) { return; }
     o.saving = true; keepScroll();
     riderPost({ action: 'next', id: id }, function () { o.saving = false; o.status = 'Arriving next'; }, 'Couldn’t update ' + id + '. Try again.');
     setTimeout(function () { if (o.saving) { o.saving = false; } }, 20000);
   }
-  function markDelivered(id) {
-    if (S.dConfirm !== id) { S.dConfirm = id; keepScroll(); return; }
+  function markDelivered(id, method) {
+    var k = id + '|' + (method || '');
+    if (S.dConfirm !== k) { S.dConfirm = k; keepScroll(); return; }
     S.dConfirm = '';
     var o = (S.deliv || []).filter(function (x) { return x.id === id; })[0]; if (o) { o.saving = true; } keepScroll();
-    fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'delivered', pin: S.dpin, id: id }) })
+    var amt = o ? (o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total) : 0;
+    fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'delivered', pin: S.dpin, id: id, method: method || '', amount: amt }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.ok) { S.deliv = S.deliv.filter(function (x) { return x.id !== id; }); }
@@ -771,14 +807,14 @@
       (todo.length ? '<h2 class="osec">To pack</h2>' : '') + todo.map(function (o) {
         var busy = S.pBusy === o.id;
         return '<div class="dcard"><span class="stage conf">' + esc(dayFor(o.window)) + '</span>' +
-          '<div class="dtop"><b>' + esc(o.id) + '</b><span class="dsub">' + esc(o.name) + (o.area ? ' · ' + esc(o.area) : '') + '</span></div>' +
+          '<div class="dtop"><b>' + esc(o.id) + '</b></div>' +
           '<ul class="plines">' + o.lines.map(function (x) { return '<li>' + lineTxt(x) + '</li>'; }).join('') + '</ul>' +
           (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
           '<button class="btn press' + (S.pConfirm === o.id ? ' confirm' : '') + '" data-act="packed" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>' +
             (busy ? 'Saving…' : S.pConfirm === o.id ? 'Tap again to confirm packed' : 'Mark packed') + '</button></div>';
       }).join('') +
       (done.length ? '<h2 class="osec">Packed</h2>' : '') + done.map(function (o) {
-        return '<div class="dcard"><span class="stage packed">Packed</span><div class="dtop"><b>' + esc(o.id) + '</b><span class="dsub">' + esc(o.name) + (o.area ? ' · ' + esc(o.area) : '') + '</span></div>' +
+        return '<div class="dcard"><span class="stage packed">Packed</span><div class="dtop"><b>' + esc(o.id) + '</b></div>' +
           '<span class="dsub">' + esc(o.packedBy) + '</span>' +
           '<button class="btn dark press" data-act="unpack" data-id="' + esc(o.id) + '"' + (S.pBusy === o.id ? ' disabled' : '') + '>Not packed yet (undo)</button></div>';
       }).join('') +
@@ -796,21 +832,29 @@
         '<span class="muted-g">For the Blio team only.</span>' + installHtml() + '</div>';
     }
     if (S.dTab === 'packing') { return packingHtml(anim); }
-    var RANK = { 'Arriving next': 0, 'Out for delivery': 1, 'Packed': 2, 'Confirmed': 3 };
+    var RANK = { 'Arriving next': 0, 'Out for delivery': 1, 'Collected': 2, 'Packed': 3, 'Confirmed': 4 };
     var list = (S.deliv || []).slice().sort(function (a, b) { return (RANK[a.status] || 0) - (RANK[b.status] || 0); });
-    var toStart = list.filter(function (o) { return o.status === 'Confirmed' || o.status === 'Packed'; });
+    var toStart = list.filter(function (o) { return o.status === 'Collected'; }), notColl = list.filter(function (o) { return o.status === 'Packed'; }).length;
     var startBtn = toStart.length ? '<button class="btn big press' + (S.dStartConfirm ? ' confirmdark' : '') + '" data-act="dstart"' + (S.dBusy ? ' disabled' : '') + '>' +
         (S.dBusy === 'start' ? 'Starting…' : S.dStartConfirm ? 'Tap again to start ' + toStart.length + (toStart.length === 1 ? ' order' : ' orders') : 'Start delivery · ' + toStart.length + (toStart.length === 1 ? ' order' : ' orders')) + '</button>' +
+        (notColl ? '<div class="box warn" role="status">' + notColl + (notColl === 1 ? ' packed order is' : ' packed orders are') + ' not collected yet. Start delivery takes only collected orders.</div>' : '') +
         '<span class="muted-g" style="margin-top:-10px">Customers see that their order is on the way.</span>' : '';
     var cards = list.map(function (o) {
       var amount = o.final !== '' && o.final !== null && o.final !== undefined ? o.final : o.total;
       var nav = o.map || ('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(o.address + ', ' + o.area + ', Kolhapur'));
       var paid = o.paid || o.status === 'Paid';
-      var stageCls = { 'Arriving next': 'next', 'Out for delivery': 'out', 'Packed': 'packed', 'Confirmed': 'conf' }[o.status] || 'conf';
-      var stageTxt = { 'Arriving next': 'Next stop', 'Out for delivery': 'On the way', 'Packed': 'Packed', 'Confirmed': 'Confirmed' }[o.status] || o.status;
+      var stageCls = { 'Arriving next': 'next', 'Out for delivery': 'out', 'Collected': 'packed', 'Packed': 'packed', 'Confirmed': 'conf' }[o.status] || 'conf';
+      var stageTxt = { 'Arriving next': 'Next stop', 'Out for delivery': 'On the way', 'Collected': 'Collected', 'Packed': 'Packed, ready to collect', 'Confirmed': 'Being packed' }[o.status] || o.status;
+      var out = o.status === 'Out for delivery' || o.status === 'Arriving next', cf = function (m) { return S.dConfirm === o.id + '|' + m; };
+      var doneBtns = !out ? '' : paid
+        ? '<button class="btn press' + (cf('') ? ' confirm' : '') + '" data-act="ddone" data-id="' + esc(o.id) + '" data-v=""' + (o.saving ? ' disabled' : '') + '>' + (o.saving ? 'Saving…' : cf('') ? 'Tap again to confirm' : 'Mark delivered') + '</button>'
+        : '<div class="arow"><button class="btn press' + (cf('Cash') ? ' confirm' : '') + '" data-act="ddone" data-id="' + esc(o.id) + '" data-v="Cash"' + (o.saving ? ' disabled' : '') + '>' + (cf('Cash') ? 'Tap again: got cash' : 'Delivered, got cash') + '</button>' +
+          '<button class="btn press' + (cf('UPI') ? ' confirm' : '') + '" data-act="ddone" data-id="' + esc(o.id) + '" data-v="UPI"' + (o.saving ? ' disabled' : '') + '>' + (cf('UPI') ? 'Tap again: got UPI' : 'Delivered, got UPI') + '</button></div>' +
+          '<button class="linkbtn dk" data-act="ddone" data-id="' + esc(o.id) + '" data-v="none">' + (cf('none') ? 'Tap again: delivered, not paid' : 'Delivered but not paid') + '</button>';
       return '<div class="dcard' + (o.status === 'Arriving next' ? ' nextcard' : '') + '"><span class="stage ' + stageCls + '">' + stageTxt + '</span>' +
         '<div class="dtop"><b>' + esc(o.name) + '</b><span class="amt num' + (paid ? ' paid' : '') + '">' +
           (paid ? 'Paid' : 'Collect ' + rs(amount)) + '</span></div>' +
+        (!paid ? '<span class="dsub">' + (o.payBy === 'Now (UPI)' ? 'Chose to pay by UPI, not confirmed yet. Check before collecting.' : 'Pay on delivery, cash or UPI') + '</span>' : '') +
         '<span class="dsub">' + esc(o.id) + (o.area ? ' · ' + esc(o.area) : '') + (o.map ? ' · pinned' : '') + '</span>' +
         '<p>' + esc(o.address) + '</p>' +
         (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
@@ -820,14 +864,15 @@
         '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a></div>' +
         (o.status === 'Out for delivery' ? '<button class="btn dark press" data-act="dnext" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>Next stop: tell customer</button>' : '') +
         (o.status === 'Arriving next' ? '<span class="dnote2">Customer has been told you’re next.</span>' : '') +
-        '<button class="btn press' + (S.dConfirm === o.id ? ' confirm' : '') + '" data-act="ddone" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>' +
-          (o.saving ? 'Saving…' : S.dConfirm === o.id ? 'Tap again to confirm' : 'Mark delivered') + '</button></div>';
+        (o.status === 'Packed' ? '<button class="btn press" data-act="dcollect" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>' + (o.saving ? 'Saving…' : 'Collected from packing') + '</button>' : '') +
+        (o.status === 'Collected' ? '<button class="linkbtn dk" data-act="duncollect" data-id="' + esc(o.id) + '"' + (o.saving ? ' disabled' : '') + '>Not collected (undo)</button>' : '') +
+        doneBtns + '</div>';
     }).join('');
     return '<div class="stack' + (anim ? ' enter' : '') + '">' + head +
         '<span class="dcount">' + (S.deliv ? list.length + (list.length === 1 ? ' order to deliver' : ' orders to deliver') : '') + '</span></div>' + roleTabs() +
       (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
       (S.dLoading && !S.deliv ? '<div class="box">Loading orders…</div>' : '') +
-      (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are marked Confirmed or Packed in the sheet.</div>' : '') +
+      (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are confirmed in Admin.</div>' : '') +
       startBtn + cards +
       '<div class="dfoot"><button class="btn dark press" data-act="dreload">' + (S.dLoading ? 'Refreshing…' : 'Refresh') + '</button>' +
       '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div>' + installHtml() + '</div>';
@@ -918,7 +963,7 @@
       case 'qdec': S.pick.qty = Math.max(1, S.pick.qty - 1); rerenderSheet(); break;
       case 'add':
         var p = findP(S.pick.id), op = optOf(p, S.pick.opt) || p.options[0], key = lineKey(p, op, S.pick.pack, S.pick.cut), hit = S.cart.filter(function (l) { return l.key === key; })[0];
-        if (hit) { hit.qty += S.pick.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, opt: op.key, size: op.size, pack: S.pick.pack, cut: S.pick.cut, qty: S.pick.qty, price: op.price }); }
+        if (hit) { hit.qty += S.pick.qty; } else { S.cart.push({ key: key, id: p.id, name: p.name, opt: op.key, size: op.size, pack: S.pick.pack, cut: S.pick.cut, qty: S.pick.qty, price: op.price, off: op.off || 0, base: op.base || op.price }); }
         saveCart(); try { if (navigator.vibrate) { navigator.vibrate(8); } } catch (err) {}
         closeSheet(); render(false);
         var cnt = $('#cnt'); if (cnt) { cnt.classList.add('bump'); setTimeout(function () { cnt.classList.remove('bump'); }, 180); }
@@ -952,7 +997,10 @@
       case 'dlogin': var pin = ($('#d-pin') || {}).value || ''; if (pin.trim()) { S.dpin = pin.trim(); store('dpin', S.dpin); S.deliv = null; loadDeliveries(); } break;
       case 'dlogout': S.dpin = ''; store('dpin', ''); S.deliv = null; S.dErr = ''; keepScroll(); break;
       case 'dreload': S.dConfirm = ''; loadDeliveries(); break;
-      case 'ddone': S.dStartConfirm = false; markDelivered(a.getAttribute('data-id')); break;
+      case 'ddone': S.dStartConfirm = false; markDelivered(a.getAttribute('data-id'), v || ''); break;
+      case 'dcollect': collect(a.getAttribute('data-id'), false); break;
+      case 'duncollect': collect(a.getAttribute('data-id'), true); break;
+      case 'payby': S.form.payBy = v; keepScroll(); break;
       case 'dstart': startDelivery(); break;
       case 'dnext': S.dStartConfirm = false; nextStop(a.getAttribute('data-id')); break;
       case 'copyupi':
@@ -980,7 +1028,7 @@
   // keep My orders fresh while an order is out for delivery
   setInterval(function () {
     if (S.screen !== 'orders' || S.ordLoading || document.hidden) { return; }
-    if (S.myorders.some(function (o) { return ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next'].indexOf(o.status) > -1; })) { loadMyOrders(); }
+    if (S.myorders.some(function (o) { return ['Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next'].indexOf(o.status) > -1; })) { loadMyOrders(); }
   }, 60000);
 
   // countdown, and fresh stock when the cut-off passes or a catch is being weighed

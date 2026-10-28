@@ -33,9 +33,9 @@
   }
   function timeOf(t) { var p = String(t || '').split(', '); return p[1] || p[0] || ''; }
 
-  var STAGES = ['New', 'Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
-  var STAGE_CLS = { 'New': 'newo', 'Confirmed': 'conf', 'Packed': 'packed', 'Out for delivery': 'out', 'Arriving next': 'next', 'Delivered': 'done', 'Cancelled': 'cancel' };
-  var FILTERS = [['open', 'Open'], ['New', 'New'], ['Confirmed', 'Confirmed'], ['Packed', 'Packed'], ['way', 'On the way'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']];
+  var STAGES = ['New', 'Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
+  var STAGE_CLS = { 'New': 'newo', 'Confirmed': 'conf', 'Packed': 'packed', 'Collected': 'packed', 'Out for delivery': 'out', 'Arriving next': 'next', 'Delivered': 'done', 'Cancelled': 'cancel' };
+  var FILTERS = [['open', 'Open'], ['New', 'New'], ['Confirmed', 'Confirmed'], ['Packed', 'Packed'], ['Collected', 'Collected'], ['way', 'On the way'], ['Delivered', 'Delivered'], ['Cancelled', 'Cancelled'], ['all', 'All']];
 
   var S = {
     auth: store('admin') || null,       // { pw, by }
@@ -110,7 +110,8 @@
     switch (o.status) {
       case 'New': return [['Confirmed', 'Confirm'], ['Cancelled', 'Cancel']];
       case 'Confirmed': return [['Packed', 'Mark packed'], ['Cancelled', 'Cancel']];
-      case 'Packed': return [['Out for delivery', 'Out for delivery']];
+      case 'Packed': return [['Collected', 'Mark collected']];
+      case 'Collected': return [['Out for delivery', 'Out for delivery']];
       case 'Out for delivery': case 'Arriving next': return [['Delivered', 'Mark delivered']];
       default: return [];
     }
@@ -122,7 +123,7 @@
       '<span class="ah1"><b>' + esc(o.name) + '</b><span class="num">' + rs(amount) + '</span></span>' +
       '<span class="ah2">' + esc(o.id) + (o.area ? ' · ' + esc(o.area) : '') + ' · ' + esc(timeOf(o.placed)) + '</span>' +
       '<span class="ah3"><span class="stage ' + (STAGE_CLS[o.status] || 'conf') + '">' + esc(o.status === 'Arriving next' ? 'Next stop' : o.status) + '</span>' +
-      (o.status === 'Cancelled' ? '' : '<span class="ptag' + (o.paid ? ' paid' : '') + '">' + (o.paid ? 'Paid' : 'Unpaid') + '</span>') + '</span></button>';
+      (o.status === 'Cancelled' ? '' : '<span class="ptag' + (o.paid ? ' paid' : '') + '">' + (o.paid ? 'Paid' + (o.collected ? ' · ' + esc(o.collected.split(' ')[0]) : '') : o.payBy === 'Now (UPI)' ? 'Unpaid · chose UPI now' : o.payBy ? 'Unpaid · pay on delivery' : 'Unpaid') + '</span>') + '</span></button>';
     if (!openC) { return '<div class="aorder">' + head + '</div>'; }
     var acts = nextActions(o).map(function (a) {
       return '<button class="btn ' + (a[0] === 'Cancelled' ? 'dark' : '') + ' press" data-act="stage" data-id="' + esc(o.id) + '" data-v="' + esc(a[0]) + '"' + (busy ? ' disabled' : '') + '>' + esc(a[1]) + '</button>';
@@ -133,7 +134,8 @@
       '<p>' + esc(o.address) + (o.area ? ', ' + esc(o.area) : '') + (o.map ? ' · <a href="' + esc(o.map) + '" target="_blank" rel="noopener">pinned on map</a>' : '') + '</p>' +
       (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
       '<p class="dsub">Delivery ' + esc(winLabel(o.window)) + ' · placed ' + esc(o.placed) + (o.outAt ? ' · out ' + esc(timeOf(o.outAt)) : '') + (o.deliveredAt ? ' · delivered ' + esc(timeOf(o.deliveredAt)) : '') +
-        (o.coupon ? ' · coupon ' + esc(o.coupon) + ' −' + rs(o.discount) : '') + (o.packedBy ? ' · packed by ' + esc(o.packedBy) : '') + '</p>' +
+        (o.coupon ? ' · coupon ' + esc(o.coupon) + ' −' + rs(o.discount) : '') + (o.packedBy ? ' · packed by ' + esc(o.packedBy) : '') +
+        (o.collected ? ' · collected at the door: ' + esc(o.collected.split(' ')[0]) + ' ' + rs(o.collected.split(' ')[1]) : '') + '</p>' +
       '<div class="dbtns"><a class="btn dark" href="tel:+91' + esc(o.mobile) + '">Call</a>' +
       '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a>' +
       '<a class="btn dark" href="' + esc(nav) + '" target="_blank" rel="noopener">Map</a></div>' +
@@ -153,6 +155,19 @@
       (busy ? '<span class="muted-g">Saving…</span>' : '') +
       '</div></div>';
   }
+  /** Money taken at the door today, so the delivery person's cash can be checked. */
+  function cashHtml(all) {
+    var d = new Date(), n = new Date(d.getTime() + (d.getTimezoneOffset() + 330) * 60000);
+    var tag = ('0' + n.getDate()).slice(-2) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][n.getMonth()] + ' ' + n.getFullYear();
+    var cash = 0, upi = 0, nc = 0, nu = 0;
+    all.forEach(function (o) {
+      if (!o.collected || String(o.deliveredAt).indexOf(tag) !== 0) { return; }
+      var p = o.collected.split(' '), amt = Number(p[1]) || 0;
+      if (p[0] === 'Cash') { cash += amt; nc++; } else if (p[0] === 'UPI') { upi += amt; nu++; }
+    });
+    if (!nc && !nu) { return ''; }
+    return '<div class="box">Collected at the door today: <b class="num">' + rs(cash) + ' cash</b> (' + nc + ')' + ' · <b class="num">' + rs(upi) + ' UPI</b> (' + nu + ')</div>';
+  }
   function ordersHtml() {
     var all = S.data.orders || [];
     var wins = []; all.forEach(function (o) { if (o.window && wins.indexOf(o.window) === -1) { wins.push(o.window); } });
@@ -168,7 +183,7 @@
       }).join('') + '<button class="chip" data-act="win" data-v="*" aria-pressed="' + (S.win === '*') + '">All days</button></div>' : '') +
       '<div class="chiprow" role="group" aria-label="Stage">' + FILTERS.map(function (f) {
         return '<button class="chip" data-act="filter" data-v="' + f[0] + '" aria-pressed="' + (S.filter === f[0]) + '">' + f[1] + ' <span class="cnt">' + count(f[0]) + '</span></button>';
-      }).join('') + '</div>' +
+      }).join('') + '</div>' + cashHtml(all) +
       (S.note ? '<div class="box ok" role="status">' + esc(S.note) + '</div>' : '') +
       (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div>' : '') +
       (list.length ? list.map(orderCard).join('') : '<div class="box">No orders here.</div>') +
@@ -215,9 +230,11 @@
     var tag = { Draft: 'newo', Live: 'conf', Ended: 'done', Closed: 'cancel' }[l.stage] || 'conf';
     var margin = l.cost !== '' && l.cost !== null && Number(l.cost) > 0 ? Math.round((l.price - l.cost) / l.price * 100) : null;
     var offPrice = l.offer ? Math.round(l.price * (1 - l.offer / 100)) : l.price;
+    var st = S.data.settings || {}, plan = S.data.plan || {}, d2 = st.discOn && plan.date && plan.date > l.landed ? Number(st.discPct) || 0 : 0;
+    var nowOff = Math.max(d2, l.offer || 0), nowPrice = nowOff ? Math.round(l.price * (1 - nowOff / 100)) : l.price;
     var offMargin = margin !== null && l.offer ? Math.round((offPrice - l.cost) / offPrice * 100) : null, offLoss = offMargin !== null && offPrice < Number(l.cost);
     var head = '<button class="aorder-head" data-act="lot" data-id="' + esc(l.lot) + '" aria-expanded="' + open + '">' +
-      '<span class="ah1"><b>' + esc(l.fish) + (l.size ? ' · ' + esc(l.size.toLowerCase()) : '') + '</b><span class="num">' + rs(l.price) + '/kg</span></span>' +
+      '<span class="ah1"><b>' + esc(l.fish) + (l.size ? ' · ' + esc(l.size.toLowerCase()) : '') + '</b><span class="num">' + (nowPrice < l.price ? '<s class="was">' + rs(l.price) + '</s>' + rs(nowPrice) : rs(l.price)) + '/kg</span></span>' +
       '<span class="ah2">' + esc(l.landedLabel) + (l.harbour ? ' · ' + esc(l.harbour) : '') + ' · ' + esc(l.lot) + '</span>' +
       '<span class="ah2 num">Bought ' + kg(l.kg) + (l.pieces !== '' && l.pieces !== null ? ' (' + l.pieces + ' fish)' : '') + ' · sold ' + kg(l.sold) + ' · <b>left ' + kg(l.left) + '</b></span>' +
       '<span class="ah3"><span class="stage ' + tag + '">' + esc(l.stage === 'Draft' ? 'Waiting to go live' : l.stage === 'Ended' ? 'Selling ended' : l.stage) + '</span>' +
@@ -339,7 +356,7 @@
         '<label><span>Uses per mobile</span><input class="ainput num" id="cp-per" type="number" inputmode="numeric" min="0" value="1"></label>' +
         '<label><span>Total uses</span><input class="ainput num" id="cp-max" type="number" inputmode="numeric" min="0" placeholder="No limit"></label></div>' +
         '<button class="btn press" data-act="cpsave"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Add coupon') + '</button>' +
-        '<span class="dsub">Customers type the code on their slip. It is checked again when they place the order. Cancelled orders don’t count as uses.</span></div>';
+        '<span class="dsub">Customers type the code on their slip. It is checked again when they place the order. Cancelled orders don’t count as uses. Coupons don’t apply to items already on offer.</span></div>';
   }
   function settingsHtml() {
     var st = S.data.settings || {}, busy = !!S.busy.settings;
