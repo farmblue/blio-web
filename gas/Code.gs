@@ -20,11 +20,12 @@ var GROUPS = ['Fish', 'Prawns', 'Crabs and clams', 'Dried'];
 var PACKS = { '500 g': 0.5, '1 kg': 1 };
 var MAX_QTY = 20;
 var ORDER_COLS = ['Order ID', 'Placed at', 'Window', 'Name', 'Mobile', 'Address', 'Area', 'Items', 'Subtotal', 'Delivery',
-  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token', 'Payment', 'Out at', 'Next at'];
+  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token', 'Payment', 'Out at', 'Next at', 'Packed by', 'Coupon', 'Discount'];
 var STATUSES = ['New', 'Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
 var TO_DELIVER = ['Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Paid'];   // 'Paid' kept for orders from before the Payment column
 var SIZES = ['', 'Small to medium', 'Medium to big'];
-var STOCK_COLS = ['Lot', 'Landed', 'Fish', 'Size', 'Pieces', 'Kg bought', 'Cost per kg', 'Price per kg', 'Harbour', 'Status', 'Entered at', 'Entered by'];
+var STOCK_COLS = ['Lot', 'Landed', 'Fish', 'Size', 'Pieces', 'Kg bought', 'Cost per kg', 'Price per kg', 'Harbour', 'Status', 'Entered at', 'Entered by', 'Offer %'];
+var COUPON_COLS = ['Code', 'Type (% or Rs)', 'Value', 'Min order (Rs)', 'Valid till', 'Uses per mobile', 'Max uses', 'Active', 'Note'];
 var COUNT_COLS = ['Time', 'Lot', 'Fish', 'Size', 'Expected kg', 'Waste kg', 'Counted kg', 'Gap kg', 'Pieces counted', 'By', 'Note'];
 var CAT_COLS = ['Category', 'Marathi name', 'Order', 'Show'];
 var CAT_SEED = [['Fish', 'मासे', 1, 'Yes'], ['Prawns', 'कोळंबी', 2, 'Yes'], ['Crabs and clams', 'खेकडे, तिसऱ्या', 3, 'Yes'], ['Dried', 'सुकी मासळी', 4, 'Yes']];
@@ -46,9 +47,10 @@ var SETTINGS = [
   ['Show landing date (Yes or No)', 'Yes'],
   ['Go live automatically after (minutes)', 30],
   ['Auto go-live on (Yes or No)', 'Yes'],
-  ['Harbours (separated by commas)', 'Goa, Vengurla, Malvan, Devgad, Ratnagiri']
+  ['Harbours (separated by commas)', 'Goa, Vengurla, Malvan, Devgad, Ratnagiri'],
+  ['Packing PIN (4 to 8 digits)', '']
 ];
-var SETUP_VERSION = '2026-10-28b';   // change this when setup_ adds new tabs, columns or settings
+var SETUP_VERSION = '2026-10-28c';   // change this when setup_ adds new tabs, columns or settings
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
   address: 'House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra',
@@ -98,6 +100,7 @@ function setup_() {
   tab_('Stock', STOCK_COLS);
   tab_('Counts', COUNT_COLS);
   tab_('Categories', CAT_COLS, CAT_SEED);
+  tab_('Coupons', COUPON_COLS);
   var s = sheet_('Settings'), have = s.getRange(2, 1, SETTINGS.length, 1).getValues();
   SETTINGS.forEach(function (row, i) {
     var r = i + 2;
@@ -219,6 +222,7 @@ function lots_() {
     return { lot: String(r['lot']).trim(), landed: normDate_(r['landed']), fish: String(r['fish']).trim(), size: String(r['size'] || '').trim(),
       pieces: r['pieces'] === '' ? '' : Number(r['pieces']), kg: Number(r['kg bought']) || 0, cost: r['cost per kg'] === '' ? '' : Number(r['cost per kg']),
       price: Number(r['price per kg']) || 0, harbour: String(r['harbour'] || ''), status: String(r['status'] || 'Draft').trim(),
+      offer: Math.max(0, Math.min(90, Number(r['offer %']) || 0)),
       enteredAt: String(r['entered at'] || ''), by: String(r['entered by'] || '') };
   });
 }
@@ -280,12 +284,12 @@ function shop_() {
     if (!isLive_(l, sc)) { if (l.status === 'Draft') pending = true; return; }
     var left = Math.round((l.kg - (sold[l.lot] || 0) + (adj[l.lot] || 0)) * 100) / 100;
     if (left < 0.5) return;
-    var day2 = dayDiff_(l.landed, plan.date) >= 1, price = l.price;
-    if (day2 && sc.discOn) price = Math.round(l.price * (1 - sc.discPct / 100));
+    var day2 = dayDiff_(l.landed, plan.date) >= 1, off = Math.max(day2 && sc.discOn ? sc.discPct : 0, l.offer || 0);
+    var price = off ? Math.round(l.price * (1 - off / 100)) : l.price;
     var hb = f.showOrigin ? l.harbour : '';
     var key = l.size + '|' + price + '|' + (sc.showLanding ? l.landed : '') + (hb ? '|' + hb : '');
     var g = byFish[l.fish] = byFish[l.fish] || {};
-    var o = g[key] = g[key] || { key: key, size: l.size, price: price, base: l.price, off: day2 && sc.discOn ? sc.discPct : 0,
+    var o = g[key] = g[key] || { key: key, size: l.size, price: price, base: l.price, off: off, offer: (l.offer || 0) > 0 && l.offer >= off,
       landed: sc.showLanding ? landedLabel_(l.landed) : '', harbour: hb, left: 0, lots: [] };
     o.left = Math.round((o.left + left) * 100) / 100;
     o.lots.push({ lot: l.lot, left: left });
@@ -349,15 +353,46 @@ function deliveryFee_() { var f = Number(setting_('Delivery fee')); return isNaN
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 // ---------- delivery PIN, with a lockout after 10 wrong tries in 10 minutes ----------
-function pinCheck_(pin) {
-  var real = String(setting_('Delivery PIN')).trim();
-  if (!real) return 'off';
+function pinCheck_(pin) { return staff_(pin).chk; }
+/** Which staff roles a PIN opens: the Delivery PIN opens deliveries, the Packing PIN opens packing. */
+function staff_(pin) {
+  var rider = String(setting_('Delivery PIN')).trim(), packer = String(setting_('Packing PIN')).trim();
+  if (!rider && !packer) return { chk: 'off', roles: [] };
   var cache = CacheService.getScriptCache();
   var bad = Number(cache.get('badpin') || 0);
-  if (bad >= 10) return 'locked';
-  if (String(pin || '').trim() === real) return 'ok';
+  if (bad >= 10) return { chk: 'locked', roles: [] };
+  var p = String(pin || '').trim(), roles = [];
+  if (p && p === rider) roles.push('delivery');
+  if (p && p === packer) roles.push('packing');
+  if (roles.length) return { chk: 'ok', roles: roles };
   cache.put('badpin', String(bad + 1), 600);
-  return 'wrong';
+  return { chk: 'wrong', roles: [] };
+}
+/** Orders to clean, cut and pack, with their lines, plus a cutting list totalled by fish, size and cut. */
+function packList_() {
+  var sh = sheet_('Orders'), c = colIndex_(sh), v = sh.getDataRange().getDisplayValues(), want = {}, out = [];
+  var get = function (r, k) { return c[k] ? r[c[k] - 1] : ''; };
+  for (var i = 1; i < v.length; i++) {
+    var st = String(get(v[i], 'Status')).trim(); if (st === 'Paid') st = 'Confirmed';
+    if (st !== 'Confirmed' && st !== 'Packed') continue;
+    var id = String(get(v[i], 'Order ID'));
+    want[id] = { id: id, status: st, window: String(get(v[i], 'Window')), name: String(get(v[i], 'Name')).split(' ')[0], area: String(get(v[i], 'Area')),
+      notes: String(get(v[i], 'Notes')), packedBy: String(get(v[i], 'Packed by') || ''), lines: [] };
+    out.push(want[id]);
+  }
+  var cut = {};
+  rows_('Order lines').forEach(function (l) {
+    var o = want[String(l['order id'])]; if (!o) return;
+    var item = String(l['item']), size = String(l['size'] || ''), pack = String(l['pack']), ct = String(l['cut']), kg = Number(l['kg']) || 0;
+    var hit = o.lines.filter(function (x) { return x.item === item && x.size === size && x.pack === pack && x.cut === ct; })[0];
+    if (hit) hit.kg += kg; else o.lines.push({ item: item, size: size, pack: pack, cut: ct, kg: kg });
+    if (o.status === 'Confirmed') { var k = item + '|' + size + '|' + ct; cut[k] = cut[k] || { item: item, size: size, cut: ct, kg: 0 }; cut[k].kg += kg; }
+  });
+  out.forEach(function (o) { o.lines.forEach(function (x) { x.kg = Math.round(x.kg * 100) / 100; x.qty = Math.round(x.kg / (PACKS[x.pack] || 1)); }); });
+  out.sort(function (a, b) { return a.window < b.window ? -1 : a.window > b.window ? 1 : a.id < b.id ? -1 : 1; });
+  var cutList = Object.keys(cut).map(function (k) { cut[k].kg = Math.round(cut[k].kg * 100) / 100; return cut[k]; })
+    .sort(function (a, b) { return a.item.localeCompare(b.item) || a.size.localeCompare(b.size); });
+  return { orders: out, cutList: cutList };
 }
 
 function deliveries_() {
@@ -398,7 +433,7 @@ function myOrders_(ids) {
     out.push({
       id: id, status: String(get(v[i], 'Status')).trim() || 'New', window: String(get(v[i], 'Window')),
       total: Number(get(raw[i], 'Total')) || 0, final: get(raw[i], 'Final amount') === '' ? '' : Number(get(raw[i], 'Final amount')),
-      bill: String(get(v[i], 'Bill') || ''), deliveredAt: String(get(v[i], 'Delivered at') || ''),
+      bill: String(get(v[i], 'Bill') || '') ? 'yes' : '', discount: Number(get(raw[i], 'Discount')) || 0, deliveredAt: String(get(v[i], 'Delivered at') || ''),
       paid: isPaid_(get(v[i], 'Status'), get(v[i], 'Payment')),
       outAt: String(get(v[i], 'Out at') || ''), nextAt: String(get(v[i], 'Next at') || ''),
       rider: ['Out for delivery', 'Arriving next'].indexOf(String(get(v[i], 'Status')).trim()) > -1 ? rider : ''
@@ -414,10 +449,15 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.action === 'myorders') return json_({ ok: true, orders: myOrders_(String(p.ids || '')) });
   if (p.action === 'deliveries') {
-    var chk = pinCheck_(p.pin);
-    if (chk !== 'ok') return json_({ ok: false, error: chk === 'locked' ? 'locked' : 'pin' });
-    return json_({ ok: true, orders: deliveries_() });
+    var st = staff_(p.pin);
+    if (st.chk !== 'ok') return json_({ ok: false, error: st.chk === 'locked' ? 'locked' : 'pin' });
+    var res = { ok: true, roles: st.roles };
+    if (st.roles.indexOf('delivery') > -1) res.orders = deliveries_();
+    if (st.roles.indexOf('packing') > -1) res.pack = packList_();
+    return json_(res);
   }
+  if (p.action === 'coupon') return json_(couponCheck_(p.code, p.phone, Number(p.sub) || 0));
+  if (p.action === 'bill') return json_(customerBill_(String(p.id || ''), String(p.t || '')));
   var cache = CacheService.getScriptCache(), hit = cache.get('shop');
   if (hit) return ContentService.createTextOutput(hit).setMimeType(ContentService.MimeType.JSON);
   var out = JSON.stringify(shopOut_());
@@ -439,7 +479,7 @@ function doPost(e) {
   try {
     bust_();
     var o = JSON.parse(e.postData.contents);
-    if (o.action === 'delivered' || o.action === 'start' || o.action === 'next') return json_(stage_(o));
+    if (['delivered', 'start', 'next', 'packed', 'unpack'].indexOf(o.action) > -1) return json_(stage_(o));
     if (o.action === 'admin') return json_(admin_(o));
     return json_(placeOrder_(o));
   } catch (err) {
@@ -451,8 +491,9 @@ function doPost(e) {
 
 /** Rider actions from Blio Delivery: start the round, next stop, delivered. */
 function stage_(o) {
-  var chk = pinCheck_(o.pin);
-  if (chk !== 'ok') return { ok: false, error: chk === 'locked' ? 'locked' : 'pin' };
+  var stf = staff_(o.pin), packing = o.action === 'packed' || o.action === 'unpack';
+  if (stf.chk !== 'ok') return { ok: false, error: stf.chk === 'locked' ? 'locked' : 'pin' };
+  if (stf.roles.indexOf(packing ? 'packing' : 'delivery') === -1) return { ok: false, error: 'role' };
   ensureSetup_();
   var sh = sheet_('Orders'), c = colIndex_(sh), n = Math.max(1, sh.getLastRow() - 1);
   var ids = sh.getRange(2, c['Order ID'], n, 1).getDisplayValues();
@@ -463,7 +504,15 @@ function stage_(o) {
     if (want.indexOf(ids[i][0]) === -1) continue;
     var row = i + 2, cur = String(st[i][0]).trim();
     if (cur === 'Paid') { sh.getRange(row, c['Payment']).setValue('Paid'); cur = 'Confirmed'; }
-    if (o.action === 'start') {
+    if (o.action === 'packed') {
+      if (cur !== 'Confirmed') continue;
+      sh.getRange(row, c['Status']).setValue('Packed');
+      if (c['Packed by']) sh.getRange(row, c['Packed by']).setNumberFormat('@').setValue(String(o.by || 'Packing').slice(0, 30) + ', ' + time);
+    } else if (o.action === 'unpack') {
+      if (cur !== 'Packed') continue;
+      sh.getRange(row, c['Status']).setValue('Confirmed');
+      if (c['Packed by']) sh.getRange(row, c['Packed by']).setValue('');
+    } else if (o.action === 'start') {
       if (['Confirmed', 'Packed'].indexOf(cur) === -1) continue;
       sh.getRange(row, c['Status']).setValue('Out for delivery');
       sh.getRange(row, c['Out at']).setNumberFormat('@').setValue(time);
@@ -478,6 +527,7 @@ function stage_(o) {
     }
     done++;
   }
+  if (done && packing) adminLog_(String(o.by || 'Packing'), o.id + ': ' + (o.action === 'packed' ? 'packed' : 'back to confirmed'));
   return done ? { ok: true, time: time, count: done } : { ok: false, error: 'notfound' };
 }
 
@@ -525,7 +575,12 @@ function placeOrder_(o) {
   });
   lines.forEach(function (l) { delete l.opt; });
   var sub = lines.reduce(function (a, l) { return a + l.total; }, 0);
-  var fee = deliveryFee_();
+  var fee = deliveryFee_(), cpn = null;
+  if (cleanCode_(o.coupon)) {
+    cpn = couponCheck_(o.coupon, phone, sub);
+    if (!cpn.ok) return { ok: false, error: 'coupon', reason: cpn.error, min: cpn.min || 0 };
+  }
+  var disc = cpn ? cpn.discount : 0;
   var orders = sheet_('Orders'), c = colIndex_(orders), width = orders.getLastColumn();
   var id = 'BL' + Utilities.formatDate(new Date(), TZ, 'ddMM') + '-' + ('00' + orders.getLastRow()).slice(-3);
   var placed = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy, h:mm a');
@@ -534,7 +589,7 @@ function placeOrder_(o) {
 
   var values = {
     'Order ID': id, 'Placed at': placed, 'Window': w, 'Name': name, 'Mobile': phone, 'Address': address, 'Area': area,
-    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub + fee, 'Status': 'New', 'Notes': notes, 'Map': map, 'Token': token, 'Payment': 'Unpaid'
+    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub - disc + fee, 'Status': 'New', 'Coupon': cpn ? cpn.code : '', 'Discount': disc || '', 'Notes': notes, 'Map': map, 'Token': token, 'Payment': 'Unpaid'
   };
   var row = orders.getLastRow() + 1, out = [];
   for (var i = 1; i <= width; i++) out.push('');
@@ -558,7 +613,7 @@ function placeOrder_(o) {
   ol.getRange(start, 1, rowsOut.length, ow).setValues(rowsOut);
 
   return { ok: true, id: id, token: token, window: w, delivery: { date: shop.plan.date, sameDay: shop.plan.sameDay, today: shop.plan.today },
-    schedule: { start: hhmm_(shop.sc.start), end: hhmm_(shop.sc.end) }, subtotal: sub, fee: fee, total: sub + fee, lines: lines };
+    schedule: { start: hhmm_(shop.sc.start), end: hhmm_(shop.sc.end) }, subtotal: sub, fee: fee, discount: disc, coupon: cpn ? cpn.code : '', total: sub - disc + fee, lines: lines };
 }
 
 // ---------- Blio Admin app ----------
@@ -598,7 +653,8 @@ function adminOrders_() {
       area: String(g(disp[i], 'Area')), items: String(g(disp[i], 'Items')), notes: String(g(disp[i], 'Notes')),
       total: Number(g(raw[i], 'Total')) || 0, final: g(raw[i], 'Final amount') === '' ? '' : Number(g(raw[i], 'Final amount')),
       status: st === 'Paid' ? 'Confirmed' : st, paid: isPaid_(st, g(disp[i], 'Payment')), map: String(g(disp[i], 'Map') || ''),
-      bill: String(g(disp[i], 'Bill') || ''), outAt: String(g(disp[i], 'Out at') || ''), deliveredAt: String(g(disp[i], 'Delivered at') || '')
+      bill: String(g(disp[i], 'Bill') || ''), outAt: String(g(disp[i], 'Out at') || ''), deliveredAt: String(g(disp[i], 'Delivered at') || ''),
+      coupon: String(g(disp[i], 'Coupon') || ''), discount: Number(g(raw[i], 'Discount')) || 0, packedBy: String(g(disp[i], 'Packed by') || '')
     });
   }
   return out;
@@ -617,7 +673,7 @@ function adminSettings_() {
   var sc = sched_();
   return { fee: deliveryFee_(), upi: String(setting_('UPI ID')).trim(), payee: String(setting_('Payee name')).trim(),
     rider: String(setting_('Delivery person mobile')).trim(), fssai: String(setting_('FSSAI number')).trim(),
-    pin: String(setting_('Delivery PIN')).trim(), start: hhmm_(sc.start), end: hhmm_(sc.end), cutoff: hhmm_(sc.cutoff),
+    pin: String(setting_('Delivery PIN')).trim(), packPin: String(setting_('Packing PIN')).trim(), start: hhmm_(sc.start), end: hhmm_(sc.end), cutoff: hhmm_(sc.cutoff),
     sellDays: sc.sellDays, discOn: sc.discOn, discPct: sc.discPct, showLanding: sc.showLanding, autoMin: sc.autoMin, autoOn: sc.autoOn, harbours: harbours_() };
 }
 function adminLoad_() {
@@ -628,7 +684,7 @@ function adminLoad_() {
     var lastDay = addDays_(l.landed, sc.sellDays - 1);
     var stage = l.status === 'Closed' ? 'Closed' : today > lastDay ? 'Ended' : isLive_(l, sc) ? 'Live' : 'Draft';
     return { lot: l.lot, landed: l.landed, landedLabel: landedLabel_(l.landed), fish: l.fish, size: l.size, pieces: l.pieces, kg: l.kg, cost: l.cost,
-      price: l.price, harbour: l.harbour, status: l.status, stage: stage, sold: Math.round((sold[l.lot] || 0) * 100) / 100, left: left, expected: expected,
+      price: l.price, offer: l.offer || 0, harbour: l.harbour, status: l.status, stage: stage, sold: Math.round((sold[l.lot] || 0) * 100) / 100, left: left, expected: expected,
       lastDay: lastDay, autoAt: l.status === 'Draft' ? l.enteredAt : '' };
   }).sort(function (a, b) { return a.landed < b.landed ? 1 : a.landed > b.landed ? -1 : a.fish.localeCompare(b.fish); });
   var cs = sheet_('Counts'), counts = [];
@@ -637,7 +693,7 @@ function adminLoad_() {
       waste: Number(c['waste kg']) || 0, counted: Number(c['counted kg']) || 0, gap: Number(c['gap kg']) || 0, pieces: c['pieces counted'], by: String(c['by']) };
   });
   return { ok: true, window: plan.label, plan: plan, orders: adminOrders_(), lots: lots, counts: counts, fish: catalog_(), categories: categories_(true),
-    settings: adminSettings_(), sizes: SIZES, sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
+    settings: adminSettings_(), coupons: adminCoupons_(), sizes: SIZES, sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
 }
 function addLot_(o, by) {
   var cat = {}; catalog_().forEach(function (f) { cat[f.name] = f; });
@@ -690,6 +746,7 @@ function editLot_(o, by) {
   if (o.price !== undefined) { var p = Number(o.price); if (!(p > 0 && p < 100000)) return { ok: false, error: 'bad' }; sh.getRange(row, c['Price per kg']).setValue(p); d.push('price ' + p); }
   if (o.kg !== undefined) { var k = Number(o.kg); if (!(k > 0 && k < 5000)) return { ok: false, error: 'bad' }; sh.getRange(row, c['Kg bought']).setValue(k); d.push('kg bought ' + k); }
   if (o.pieces !== undefined) { var pc = o.pieces === '' ? '' : Math.round(Number(o.pieces)); sh.getRange(row, c['Pieces']).setValue(pc); d.push('pieces ' + pc); }
+  if (o.offer !== undefined) { var of = Math.round(Number(o.offer) || 0); if (!(of >= 0 && of <= 90)) return { ok: false, error: 'bad' }; if (c['Offer %']) sh.getRange(row, c['Offer %']).setValue(of || ''); d.push(of ? 'offer ' + of + '%' : 'offer removed'); }
   if (o.status !== undefined) { if (['Draft', 'Live', 'Closed'].indexOf(o.status) === -1) return { ok: false, error: 'bad' }; sh.getRange(row, c['Status']).setValue(o.status); d.push(o.status); }
   adminLog_(by, 'catch ' + o.lot + ': ' + d.join(', '));
   return { ok: true };
@@ -753,6 +810,65 @@ function saveCategory_(o, by) {
   adminLog_(by, (isNew ? 'added category ' : 'edited category ') + name);
   return { ok: true };
 }
+// ---------- coupons ----------
+function cleanCode_(c) { return String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20); }
+function coupons_() {
+  var sh = sheet_('Coupons'); if (!sh || sh.getLastRow() < 2) return [];
+  return rows_('Coupons').filter(function (r) { return cleanCode_(r['code']); }).map(function (r) {
+    var t = String(r['type (% or rs)'] || '%').trim();
+    return { code: cleanCode_(r['code']), type: /^%/.test(t) ? '%' : 'Rs', value: Number(r['value']) || 0, min: Number(r['min order (rs)']) || 0,
+      till: normDate_(r['valid till']) || '', perPhone: Number(r['uses per mobile']) || 0, max: Number(r['max uses']) || 0,
+      active: !/^n/i.test(String(r['active']).trim()), note: String(r['note'] || '') };
+  });
+}
+function couponUses_(code, phone) {
+  var sh = sheet_('Orders'), c = colIndex_(sh), all = 0, mine = 0; if (!c['Coupon']) return { all: 0, mine: 0 };
+  var v = sh.getDataRange().getDisplayValues();
+  for (var i = 1; i < v.length; i++) {
+    if (cleanCode_(v[i][c['Coupon'] - 1]) !== code || String(v[i][c['Status'] - 1]).trim() === 'Cancelled') continue;
+    all++; if (phone && String(v[i][c['Mobile'] - 1]).replace(/[^0-9]/g, '').slice(-10) === phone) mine++;
+  }
+  return { all: all, mine: mine };
+}
+/** Checks a code for this mobile and subtotal. The discount never goes above the subtotal. */
+function couponCheck_(code, phone, sub) {
+  code = cleanCode_(code); phone = String(phone || '').replace(/[^0-9]/g, '').slice(-10);
+  if (!code) return { ok: false, error: 'nocode' };
+  var cp = coupons_().filter(function (x) { return x.code === code; })[0];
+  if (!cp || !cp.active || !(cp.value > 0)) return { ok: false, error: 'nocode' };
+  if (cp.till && ymd_() > cp.till) return { ok: false, error: 'expired' };
+  if (sub < cp.min) return { ok: false, error: 'min', min: cp.min };
+  var used = couponUses_(code, phone);
+  if (cp.max && used.all >= cp.max) return { ok: false, error: 'limit' };
+  if (cp.perPhone && phone.length === 10 && used.mine >= cp.perPhone) return { ok: false, error: 'used' };
+  var off = cp.type === '%' ? Math.round(sub * Math.min(cp.value, 90) / 100) : Math.round(cp.value);
+  off = Math.max(0, Math.min(off, sub));
+  return { ok: true, code: code, discount: off, label: cp.type === '%' ? cp.value + '% off' : rupee_(cp.value) + ' off', min: cp.min };
+}
+function saveCoupon_(o, by) {
+  var code = cleanCode_(o.code); if (code.length < 3) return { ok: false, error: 'bad' };
+  var sh = tab_('Coupons', COUPON_COLS), c = colIndex_(sh), row = findRow_(sh, c['Code'], code), isNew = !row;
+  if (isNew) { row = sh.getLastRow() + 1; sh.getRange(row, c['Code']).setNumberFormat('@').setValue(code); }
+  var set = function (k, v) { if (c[k] && v !== undefined) sh.getRange(row, c[k]).setValue(v); };
+  if (o.type !== undefined) set('Type (% or Rs)', o.type === 'Rs' ? 'Rs' : '%');
+  if (o.value !== undefined) { var val = Number(o.value); if (!(val > 0 && val < 100000) || (o.type !== 'Rs' && val > 90)) return { ok: false, error: 'bad' }; set('Value', val); }
+  if (o.min !== undefined) set('Min order (Rs)', Number(o.min) || 0);
+  if (o.till !== undefined) { if (c['Valid till']) sh.getRange(row, c['Valid till']).setNumberFormat('@').setValue(normDate_(o.till) || ''); }
+  if (o.perPhone !== undefined) set('Uses per mobile', Math.max(0, Math.round(Number(o.perPhone) || 0)) || '');
+  if (o.max !== undefined) set('Max uses', Math.max(0, Math.round(Number(o.max) || 0)) || '');
+  if (o.active !== undefined) set('Active', o.active ? 'Yes' : 'No'); else if (isNew) set('Active', 'Yes');
+  if (o.note !== undefined) set('Note', String(o.note).slice(0, 80));
+  adminLog_(by, (isNew ? 'added coupon ' : 'edited coupon ') + code);
+  return { ok: true };
+}
+function adminCoupons_() {
+  var sh = sheet_('Orders'), c = colIndex_(sh), used = {};
+  if (c['Coupon']) sh.getDataRange().getDisplayValues().slice(1).forEach(function (r) {
+    var k = cleanCode_(r[c['Coupon'] - 1]); if (k && String(r[c['Status'] - 1]).trim() !== 'Cancelled') used[k] = (used[k] || 0) + 1;
+  });
+  return coupons_().map(function (x) { x.used = used[x.code] || 0; x.expired = !!(x.till && ymd_() > x.till); return x; });
+}
+
 function harbours_() { return String(setting_('Harbours')).split(',').map(function (x) { return x.trim(); }).filter(String); }
 function setSetting_(prefix, value) {
   var sh = sheet_('Settings'), v = sh.getRange(1, 1, sh.getLastRow(), 1).getValues();
@@ -773,6 +889,7 @@ function admin_(o) {
   if (o.op === 'count') return withData(count_(o, by));
   if (o.op === 'fish') return withData(saveFish_(o, by));
   if (o.op === 'category') return withData(saveCategory_(o, by));
+  if (o.op === 'coupon') return withData(saveCoupon_(o, by));
   if (o.op === 'order') {
     var sh = sheet_('Orders'), c = colIndex_(sh), row = findRow_(sh, c['Order ID'], o.id);
     if (!row) return { ok: false, error: 'notfound' };
@@ -807,7 +924,7 @@ function admin_(o) {
     return { ok: true, product: adminProducts_(currentWindow_()).filter(function (p) { return p.name === String(o.name); })[0] };
   }
   if (o.op === 'settings') {
-    var map = { fee: 'Delivery fee', upi: 'UPI ID', payee: 'Payee name', rider: 'Delivery person mobile', fssai: 'FSSAI number', pin: 'Delivery PIN',
+    var map = { fee: 'Delivery fee', upi: 'UPI ID', payee: 'Payee name', rider: 'Delivery person mobile', fssai: 'FSSAI number', pin: 'Delivery PIN', packPin: 'Packing PIN',
       start: 'Delivery starts', end: 'Delivery ends', cutoff: 'Same-day order cut-off', sellDays: 'Sell each catch for', discOn: 'Day-2 discount on',
       discPct: 'Day-2 discount (%', showLanding: 'Show landing date', autoMin: 'Go live automatically', autoOn: 'Auto go-live on', harbours: 'Harbours' };
     var sd = [];
@@ -815,7 +932,7 @@ function admin_(o) {
       if (o[k] === undefined) return;
       var v = typeof o[k] === 'boolean' ? (o[k] ? 'Yes' : 'No') : String(o[k]).trim().slice(0, 80);
       if (k === 'fee') { v = Number(v); if (!(v >= 0 && v < 10000)) return; }
-      if (k === 'pin' && v && !/^[0-9]{4,8}$/.test(v)) return;
+      if ((k === 'pin' || k === 'packPin') && v && !/^[0-9]{4,8}$/.test(v)) return;
       if ((k === 'start' || k === 'end' || k === 'cutoff') && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(v)) return;
       if (k === 'sellDays' && !(Number(v) >= 1 && Number(v) <= 7)) return;
       if (k === 'discPct' && !(Number(v) >= 0 && Number(v) <= 90)) return;
@@ -832,7 +949,14 @@ function admin_(o) {
     if (!brow) return { ok: false, error: 'notfound' };
     var b = billFor_(bs, brow);
     adminLog_(by, o.id + ': bill made');
-    return { ok: true, url: b.url, wa: b.wa, payable: b.payable };
+    return { ok: true, url: b.url, wa: b.wa, payable: b.payable, msg: b.msg, mobile: b.mobile, name: b.name, b64: b.b64 };
+  }
+  if (o.op === 'billpdf') {
+    var bs2 = sheet_('Orders'), bc2 = colIndex_(bs2), brow2 = findRow_(bs2, bc2['Order ID'], o.id);
+    if (!brow2) return { ok: false, error: 'notfound' };
+    var pf = billFile_(String(bs2.getRange(brow2, bc2['Bill']).getValue()));
+    if (!pf) return { ok: false, error: 'nobill' };
+    return { ok: true, name: pf.getName(), b64: Utilities.base64Encode(pf.getBlob().getBytes()) };
   }
   return { ok: false, error: 'bad' };
 }
@@ -861,8 +985,9 @@ function billFor_(sh, row) {
   var mobile = String(get('Mobile')).replace(/[^0-9]/g, '').slice(-10);
   var today = Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy');
 
+  var disc = Number(get('Discount')) || 0, code = String(get('Coupon') || '');
   var rowsHtml = lines.map(function (l, i) {
-    return '<tr><td>' + (i + 1) + '</td><td>' + esc_(l['item']) + '<br><span class="s">' + esc_(l['pack']) + ', ' + esc_(l['cut']) + '</span></td>' +
+    return '<tr><td>' + (i + 1) + '</td><td>' + esc_(l['item']) + '<br><span class="s">' + (l['size'] ? esc_(l['size']) + ', ' : '') + esc_(l['pack']) + ', ' + esc_(l['cut']) + '</span></td>' +
       '<td class="n">' + esc_(l['qty']) + '</td><td class="n">' + esc_(l['kg']) + ' kg</td><td class="n">' + inr_(l['line total']) + '</td></tr>';
   }).join('');
 
@@ -875,27 +1000,41 @@ function billFor_(sh, row) {
     '.two{width:100%;margin-top:6px}.two td{border:0;padding:0 0 4px 0;width:50%}</style></head><body>' +
     '<div class="top"><h1>blio</h1><b>' + esc_(COMPANY.name) + '</b><br><span class="s">' + esc_(COMPANY.address) +
     '<br>CIN ' + COMPANY.cin + (fssai ? ' · FSSAI ' + esc_(fssai) : '') + '<br>' + esc_(COMPANY.contact) + '</span></div>' +
-    '<table class="two"><tr><td><b>Bill</b><br>No. ' + esc_(id) + '<br>Date ' + today + '<br>Window ' + esc_(get('Window')) + '</td>' +
+    '<table class="two"><tr><td><b>Bill</b><br>No. ' + esc_(id) + '<br>Date ' + today + '<br>Delivery ' + esc_(get('Window')) + '</td>' +
     '<td><b>Billed to</b><br>' + esc_(get('Name')) + '<br>' + esc_(mobile) + '<br>' + esc_(get('Address')) + (get('Area') ? ', ' + esc_(get('Area')) : '') + '</td></tr></table>' +
     '<table><tr><th>#</th><th>Item</th><th class="n">Qty</th><th class="n">Weight</th><th class="n">Amount</th></tr>' + rowsHtml + '</table>' +
     '<table class="tot"><tr><td class="n" style="width:80%">Subtotal</td><td class="n">' + inr_(sub) + '</td></tr>' +
+    (disc ? '<tr><td class="n">Coupon ' + esc_(code) + '</td><td class="n">-' + inr_(disc) + '</td></tr>' : '') +
     '<tr><td class="n">Delivery</td><td class="n">' + inr_(fee) + '</td></tr>' +
-    (adjust ? '<tr><td class="n">Adjustment for final cleaned weight</td><td class="n">' + (adjust < 0 ? '-' : '') + inr_(Math.abs(adjust)) + '</td></tr>' : '') +
+    (adjust ? '<tr><td class="n">Adjustment for actual weight</td><td class="n">' + (adjust < 0 ? '-' : '') + inr_(Math.abs(adjust)) + '</td></tr>' : '') +
     '<tr class="big"><td class="n">Amount payable</td><td class="n">' + inr_(payable) + '</td></tr></table>' +
     '<p style="margin-top:18px">' + (isPaid_(get('Status'), get('Payment')) ? '<b>Paid.</b> Thank you.' : (upi ? 'Pay by UPI to <b>' + esc_(upi) + '</b>.' : 'Payment by UPI.')) + '</p>' +
-    '<p class="s">This is not a GST tax invoice. Prices are per kg; fish is weighed after cleaning.</p></body></html>';
+    '<p class="s">This is not a GST tax invoice. Prices are per kg of whole fish, weighed before cleaning.</p></body></html>';
 
   var pdf = Utilities.newBlob(html, 'text/html', id + '.html').getAs('application/pdf').setName('Blio bill ' + id + '.pdf');
-  var file = billsFolder_().createFile(pdf);
-  try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (err) {}
+  var file = billsFolder_().createFile(pdf);   // stays private in the company Drive
   if (c['Bill']) sh.getRange(row, c['Bill']).setValue(file.getUrl());
 
   var payLink = 'https://blio.in/#pay?o=' + encodeURIComponent(id) + '&a=' + Math.round(payable);
-  var msg = 'Hello ' + get('Name') + ', thank you for ordering from Blio.\n\nBill for order ' + id + ': ' + rupee_(payable) + '\n' + file.getUrl() +
+  var msg = 'Hello ' + get('Name') + ', thank you for ordering from Blio.\n\nYour bill for order ' + id + ' is attached: ' + rupee_(payable) +
     (isPaid_(get('Status'), get('Payment')) ? '\n\nPayment received. Thank you!' : (upi ? '\n\nPay by UPI here: ' + payLink : ''));
   var wa = 'https://wa.me/91' + mobile + '?text=' + encodeURIComponent(msg);
 
-  return { id: id, url: file.getUrl(), payable: payable, wa: mobile.length === 10 ? wa : '', upi: upi };
+  return { id: id, url: file.getUrl(), payable: payable, wa: mobile.length === 10 ? wa : '', upi: upi, msg: msg, mobile: mobile,
+    name: 'Blio bill ' + id + '.pdf', b64: Utilities.base64Encode(pdf.getBytes()) };
+}
+
+function billFile_(url) {
+  var m = String(url || '').match(/[-\w]{25,}/); if (!m) return null;
+  try { return DriveApp.getFileById(m[0]); } catch (e) { return null; }
+}
+/** The customer's own bill as a PDF, only with the order's private token. */
+function customerBill_(id, token) {
+  var sh = sheet_('Orders'), c = colIndex_(sh), row = findRow_(sh, c['Order ID'], id);
+  if (!row || !token || token.length < 12 || String(sh.getRange(row, c['Token']).getDisplayValue()) !== token) return { ok: false, error: 'notfound' };
+  var f = billFile_(String(sh.getRange(row, c['Bill']).getValue()));
+  if (!f) return { ok: false, error: 'nobill' };
+  return { ok: true, name: f.getName(), b64: Utilities.base64Encode(f.getBlob().getBytes()) };
 }
 
 function makeBill() {

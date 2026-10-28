@@ -15,6 +15,22 @@
     var m = String(w || '').match(/^(\d{4})-(\d{2})-(\d{2}) (\w+)/); if (!m) { return w || 'No window'; }
     return m[4] + ' ' + Number(m[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1];
   }
+  function b64File(b64, name) {
+    var bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) { arr[i] = bin.charCodeAt(i); }
+    return new File([arr], name || 'Blio bill.pdf', { type: 'application/pdf' });
+  }
+  /** Phones: opens the share menu with the PDF (pick WhatsApp, then the chat). Computers: downloads it. */
+  function shareOrSave(file, text) {
+    var touch = window.matchMedia('(pointer: coarse)').matches;
+    if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share(text ? { files: [file], text: text } : { files: [file] }).catch(function () {});
+      return;
+    }
+    var u = URL.createObjectURL(file), a = document.createElement('a');
+    a.href = u; a.download = file.name; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(u); a.remove(); }, 4000);
+  }
   function timeOf(t) { var p = String(t || '').split(', '); return p[1] || p[0] || ''; }
 
   var STAGES = ['New', 'Confirmed', 'Packed', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
@@ -116,7 +132,8 @@
       '<p class="ditems">' + esc(o.items) + '</p>' +
       '<p>' + esc(o.address) + (o.area ? ', ' + esc(o.area) : '') + (o.map ? ' · <a href="' + esc(o.map) + '" target="_blank" rel="noopener">pinned on map</a>' : '') + '</p>' +
       (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
-      '<p class="dsub">Delivery ' + esc(winLabel(o.window)) + ' · placed ' + esc(o.placed) + (o.outAt ? ' · out ' + esc(timeOf(o.outAt)) : '') + (o.deliveredAt ? ' · delivered ' + esc(timeOf(o.deliveredAt)) : '') + '</p>' +
+      '<p class="dsub">Delivery ' + esc(winLabel(o.window)) + ' · placed ' + esc(o.placed) + (o.outAt ? ' · out ' + esc(timeOf(o.outAt)) : '') + (o.deliveredAt ? ' · delivered ' + esc(timeOf(o.deliveredAt)) : '') +
+        (o.coupon ? ' · coupon ' + esc(o.coupon) + ' −' + rs(o.discount) : '') + (o.packedBy ? ' · packed by ' + esc(o.packedBy) : '') + '</p>' +
       '<div class="dbtns"><a class="btn dark" href="tel:+91' + esc(o.mobile) + '">Call</a>' +
       '<a class="btn dark" href="https://wa.me/91' + esc(o.mobile) + '" target="_blank" rel="noopener">WhatsApp</a>' +
       '<a class="btn dark" href="' + esc(nav) + '" target="_blank" rel="noopener">Map</a></div>' +
@@ -128,8 +145,9 @@
         '<div class="arow"><input id="fin-' + esc(o.id) + '" class="ainput num" type="number" inputmode="numeric" min="0" placeholder="' + rs(o.total) + '" value="' + (o.final === '' || o.final === null || o.final === undefined ? '' : esc(o.final)) + '">' +
         '<button class="btn press" data-act="final" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>Save</button></div></div>' +
       '<div class="arow">' +
-        (bill && bill.wa ? '<a class="btn press" href="' + esc(bill.wa) + '" target="_blank" rel="noopener">Send bill on WhatsApp</a>' : '') +
-        (bill || o.bill ? '<a class="btn dark" href="' + esc((bill && bill.url) || o.bill) + '" target="_blank" rel="noopener">Open bill</a>' : '') +
+        (bill && bill.file ? '<button class="btn press" data-act="billshare" data-id="' + esc(o.id) + '">Send bill PDF</button>' : '') +
+        (bill && bill.wa ? '<a class="btn dark" href="' + esc(bill.wa) + '" target="_blank" rel="noopener">WhatsApp message only</a>' : '') +
+        (!(bill && bill.file) && o.bill ? '<button class="btn dark press" data-act="billfetch" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>' + (S.busy[o.id] === 'fetch' ? 'Getting PDF…' : 'Get bill PDF') + '</button>' : '') +
         '<button class="btn ' + (bill ? 'dark ' : '') + 'press" data-act="bill" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>' + (S.busy[o.id] === 'bill' ? 'Making bill…' : (bill || o.bill ? 'Make a new bill' : 'Make bill')) + '</button>' +
       '</div>' +
       (busy ? '<span class="muted-g">Saving…</span>' : '') +
@@ -201,7 +219,8 @@
       '<span class="ah2">' + esc(l.landedLabel) + (l.harbour ? ' · ' + esc(l.harbour) : '') + ' · ' + esc(l.lot) + '</span>' +
       '<span class="ah2 num">Bought ' + kg(l.kg) + (l.pieces !== '' && l.pieces !== null ? ' (' + l.pieces + ' fish)' : '') + ' · sold ' + kg(l.sold) + ' · <b>left ' + kg(l.left) + '</b></span>' +
       '<span class="ah3"><span class="stage ' + tag + '">' + esc(l.stage === 'Draft' ? 'Waiting to go live' : l.stage === 'Ended' ? 'Selling ended' : l.stage) + '</span>' +
-        (margin !== null ? '<span class="ptag">Cost ' + rs(l.cost) + ' · ' + margin + '% margin</span>' : '') + '</span></button>';
+        (margin !== null ? '<span class="ptag">Cost ' + rs(l.cost) + ' · ' + margin + '% margin</span>' : '') +
+        (l.offer ? '<span class="ptag offer">Offer ' + l.offer + '%</span>' : '') + '</span></button>';
     if (!open) { return '<div class="aorder">' + head + '</div>'; }
     var gapTol = Math.max(0.3, l.expected * 0.02);
     return '<div class="aorder open">' + head + '<div class="abody">' +
@@ -209,7 +228,8 @@
       '<div class="agrid" data-lot="' + esc(l.lot) + '"><label><span>Selling price per kg (₹)</span><input class="ainput num" data-f="price" type="number" inputmode="numeric" value="' + esc(l.price) + '"></label>' +
         '<label><span>Kg bought</span><input class="ainput num" data-f="kg" type="number" inputmode="decimal" step="0.1" value="' + esc(l.kg) + '"></label>' +
         '<label><span>Number of fish</span><input class="ainput num" data-f="pieces" type="number" inputmode="numeric" value="' + esc(l.pieces) + '"></label>' +
-        '<label><span>&nbsp;</span><button class="btn press" data-act="editlot" data-id="' + esc(l.lot) + '"' + (busy ? ' disabled' : '') + '>Save changes</button></label></div>' +
+        '<label><span>Offer % (shown in Today’s offers)</span><input class="ainput num" data-f="offer" type="number" inputmode="numeric" min="0" max="90" placeholder="No offer" value="' + (l.offer ? esc(l.offer) : '') + '"></label>' +
+        '<label class="span2"><button class="btn press" data-act="editlot" data-id="' + esc(l.lot) + '"' + (busy ? ' disabled' : '') + '>Save changes</button></label></div>' +
       '<div class="arow">' +
         (l.stage === 'Draft' ? '<button class="btn press" data-act="lotstatus" data-id="' + esc(l.lot) + '" data-v="Live"' + (busy ? ' disabled' : '') + '>Go live now</button>' : '') +
         (l.stage === 'Live' || l.stage === 'Draft' ? '<button class="btn dark press" data-act="lotstatus" data-id="' + esc(l.lot) + '" data-v="Closed"' + (busy ? ' disabled' : '') + '>Stop selling</button>' : '') +
@@ -298,6 +318,26 @@
       '</div>';
   }
 
+  function couponsHtml() {
+    var list = S.data.coupons || [], busy = !!S.busy.coupon;
+    return '<h2 class="osec">Coupon codes</h2>' +
+      (list.length ? '<div class="abuy">' + list.map(function (c) {
+        var bits = [c.type === '%' ? c.value + '% off' : rs(c.value) + ' off', c.min ? 'min ' + rs(c.min) : '', c.till ? (c.expired ? 'expired ' : 'till ') + dayLabel(c.till) : '',
+          'used ' + c.used + (c.max ? ' of ' + c.max : ''), c.perPhone ? c.perPhone + ' per mobile' : ''].filter(Boolean).join(' · ');
+        return '<div class="frow' + (c.active && !c.expired ? '' : ' off') + '"><span><b>' + esc(c.code) + '</b><small class="dsub" style="display:block">' + esc(bits) + '</small></span>' +
+          '<button class="toggle" role="switch" aria-checked="' + !!c.active + '" data-act="cpactive" data-v="' + esc(c.code) + '"' + (busy ? ' disabled' : '') + '><span></span>' + (c.active ? 'On' : 'Off') + '</button></div>';
+      }).join('') + '</div>' : '<div class="box">No coupon codes yet.</div>') +
+      '<div class="aform"><b>Add a coupon</b>' +
+        '<div class="agrid"><label><span>Code</span><input class="ainput" id="cp-code" autocapitalize="characters" placeholder="WELCOME50"></label>' +
+        '<label><span>Type</span><select class="ainput" id="cp-type"><option value="%">% off</option><option value="Rs">₹ off</option></select></label>' +
+        '<label><span>Value</span><input class="ainput num" id="cp-value" type="number" inputmode="numeric" min="1"></label>' +
+        '<label><span>Min order (₹)</span><input class="ainput num" id="cp-min" type="number" inputmode="numeric" min="0" placeholder="None"></label>' +
+        '<label><span>Valid till</span><input class="ainput" id="cp-till" type="date"></label>' +
+        '<label><span>Uses per mobile</span><input class="ainput num" id="cp-per" type="number" inputmode="numeric" min="0" value="1"></label>' +
+        '<label><span>Total uses</span><input class="ainput num" id="cp-max" type="number" inputmode="numeric" min="0" placeholder="No limit"></label></div>' +
+        '<button class="btn press" data-act="cpsave"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Add coupon') + '</button>' +
+        '<span class="dsub">Customers type the code on their slip. It is checked again when they place the order. Cancelled orders don’t count as uses.</span></div>';
+  }
   function settingsHtml() {
     var st = S.data.settings || {}, busy = !!S.busy.settings;
     var f = function (id, label, val, extra) { return '<div class="fld"><label for="s-' + id + '">' + label + '</label><input id="s-' + id + '" class="ainput" data-s="' + id + '" value="' + esc(val) + '" ' + (extra || '') + '></div>'; };
@@ -310,7 +350,9 @@
       f('upi', 'Company UPI ID', st.upi, 'placeholder="For example farmblue@okaxis" autocapitalize="off"') +
       f('payee', 'Payee name', st.payee) +
       f('rider', 'Delivery person mobile', st.rider, 'type="tel" inputmode="numeric" placeholder="10-digit number"') +
-      f('pin', 'Delivery PIN (for Blio Delivery)', st.pin, 'inputmode="numeric" placeholder="4 to 8 digits"') +
+      f('pin', 'Delivery PIN (opens Delivery in the Blio Delivery app)', st.pin, 'inputmode="numeric" placeholder="4 to 8 digits"') +
+      f('packPin', 'Packing PIN (opens Packing in the Blio Delivery app)', st.packPin, 'inputmode="numeric" placeholder="4 to 8 digits"') +
+      '<span class="muted-g" style="text-align:left;margin-top:-6px">Give each person only the PIN for their job. Use the same PIN for both only if one person does both.</span>' +
       f('fssai', 'FSSAI number', st.fssai, 'placeholder="Printed on bills once added"') +
       '<h2 class="osec">Delivery and catch</h2><div class="aform">' +
       '<div class="agrid">' + g('start', 'Delivery starts', st.start, 'type="time"') + g('end', 'Delivery ends', st.end, 'type="time"') +
@@ -325,6 +367,7 @@
         : '<span class="dsub">Off: a new catch stays hidden until you tap Go live on the Stock tab.</span>') +
       '<label class="afl"><span>Harbours, separated by commas</span><input id="s-harbours" class="ainput" data-s="harbours" value="' + esc((st.harbours || []).join(', ')) + '"></label></div>' +
       '<button class="btn big press" data-act="saves"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save settings') + '</button>' +
+      couponsHtml() +
       '<div class="box">Signed in as <b>' + esc(S.auth.by) + '</b>. The admin password can only be changed in the Google Sheet.' +
       (S.data.sheetUrl ? ' <a href="' + esc(S.data.sheetUrl) + '" target="_blank" rel="noopener">Open the Google Sheet</a>' : '') + '</div>' +
       '<button class="btn dark press" data-act="lock">Lock Blio Admin on this phone</button></div>';
@@ -367,11 +410,33 @@
         var inp = document.getElementById('fin-' + id), val = inp ? inp.value.trim() : '';
         if (val !== '' && !(Number(val) >= 0)) { S.err = 'Enter the final amount in rupees.'; render(); return; }
         setOrder(id, { final: val === '' ? '' : Math.round(Number(val)) }, val === '' ? 'final amount cleared' : 'final amount ' + rs(val)); break;
+      case 'cpsave':
+        var cp = { op: 'coupon', code: $('#cp-code').value.toUpperCase().replace(/[^A-Z0-9]/g, ''), type: $('#cp-type').value, value: Number($('#cp-value').value),
+          min: Number($('#cp-min').value) || 0, till: $('#cp-till').value, perPhone: Number($('#cp-per').value) || 0, max: Number($('#cp-max').value) || 0, active: true };
+        if (cp.code.length < 3) { S.err = 'The code needs at least 3 letters or numbers.'; render(); return; }
+        if (!(cp.value > 0) || (cp.type === '%' && cp.value > 90)) { S.err = cp.type === '%' ? 'Enter a % between 1 and 90.' : 'Enter the ₹ amount off.'; render(); return; }
+        if ((S.data.coupons || []).some(function (x) { return x.code === cp.code; })) { S.err = cp.code + ' already exists. Turn it on or off in the list.'; render(); return; }
+        act('coupon', cp, function () { S.note = 'Coupon ' + cp.code + ' added.'; }, 'Couldn’t add the coupon.');
+        break;
+      case 'cpactive':
+        var cx = (S.data.coupons || []).filter(function (x) { return x.code === v; })[0]; if (!cx) { return; }
+        act('coupon', { op: 'coupon', code: v, active: !cx.active }, function () { S.note = v + (cx.active ? ' turned off.' : ' turned on.'); }, 'Couldn’t update ' + v + '.');
+        break;
+      case 'billshare': var sb = S.bills[id]; if (sb && sb.file) { shareOrSave(sb.file, sb.msg); } break;
+      case 'billfetch':
+        S.busy[id] = 'fetch'; S.err = ''; render();
+        call({ op: 'billpdf', id: id }).then(function (d) {
+          delete S.busy[id];
+          if (d.ok) { var od = order(id) || {}; S.bills[id] = { file: b64File(d.b64, d.name), msg: 'Hello ' + (od.name || '') + ', here is your Blio bill for order ' + id + '.' }; }
+          else if (!authFail(d.error)) { S.err = 'Couldn’t get the bill for ' + id + '. Make a new bill instead.'; }
+          render();
+        }).catch(function () { delete S.busy[id]; S.err = 'No connection.'; render(); });
+        break;
       case 'bill':
         S.busy[id] = 'bill'; S.err = ''; render();
         call({ op: 'bill', id: id }).then(function (d) {
           delete S.busy[id];
-          if (d.ok) { S.bills[id] = { url: d.url, wa: d.wa }; var ob = order(id); if (ob) { ob.bill = d.url; } S.note = id + ': bill ready for ' + rs(d.payable) + '. Tap Send bill on WhatsApp.'; }
+          if (d.ok) { S.bills[id] = { url: d.url, wa: d.wa, msg: d.msg, file: d.b64 ? b64File(d.b64, d.name) : null }; var ob = order(id); if (ob) { ob.bill = d.url; } S.note = id + ': bill ready for ' + rs(d.payable) + '. Tap Send bill PDF, then choose WhatsApp and the customer’s chat.'; }
           else if (!authFail(d.error)) { S.err = 'Couldn’t make the bill for ' + id + '.'; }
           render();
         }).catch(function () { delete S.busy[id]; S.err = 'No connection. The bill wasn’t made.'; render(); });
@@ -409,9 +474,11 @@
         act(id, { op: 'lotedit', lot: id, status: v }, function () { S.note = id + (v === 'Closed' ? ' stopped. Customers can’t order it now.' : ' is on sale.'); load(true); }, 'Couldn’t update ' + id + '.');
         break;
       case 'editlot':
-        var eg = main.querySelector('.agrid[data-lot="' + id + '"]'), lp = eg.querySelector('[data-f=price]').value.trim(), lk = eg.querySelector('[data-f=kg]').value.trim(), lpc = eg.querySelector('[data-f=pieces]').value.trim();
+        var eg = main.querySelector('.agrid[data-lot="' + id + '"]'), lp = eg.querySelector('[data-f=price]').value.trim(), lk = eg.querySelector('[data-f=kg]').value.trim(), lpc = eg.querySelector('[data-f=pieces]').value.trim(), lo = eg.querySelector('[data-f=offer]').value.trim();
         if (!(Number(lp) > 0) || !(Number(lk) > 0)) { S.err = 'Price and kg must be more than 0.'; render(); return; }
-        act(id, { op: 'lotedit', lot: id, price: Number(lp), kg: Number(lk), pieces: lpc === '' ? '' : Number(lpc) }, function () { S.note = id + ' saved.'; load(true); }, 'Couldn’t save ' + id + '.');
+        if (lo !== '' && !(Number(lo) >= 0 && Number(lo) <= 90)) { S.err = 'The offer must be between 0 and 90%.'; render(); return; }
+        act(id, { op: 'lotedit', lot: id, price: Number(lp), kg: Number(lk), pieces: lpc === '' ? '' : Number(lpc), offer: lo === '' ? 0 : Math.round(Number(lo)) }, function () {
+          S.note = id + ' saved.' + (Number(lo) > 0 ? ' It shows in Today’s offers at ' + Math.round(Number(lo)) + '% off.' : ''); load(true); }, 'Couldn’t save ' + id + '.');
         break;
       case 'count':
         var cg = main.querySelector('.acount[data-lot="' + id + '"]'), q = function (k) { return cg.querySelector('[data-f=' + k + ']'); };
@@ -456,6 +523,7 @@
         main.querySelectorAll('[data-s]').forEach(function (i) { body[i.getAttribute('data-s')] = i.value.trim(); });
         if (body.rider && body.rider.replace(/[^0-9]/g, '').length !== 10) { S.err = 'The delivery person’s mobile needs 10 digits.'; render(); return; }
         if (body.pin && !/^[0-9]{4,8}$/.test(body.pin)) { S.err = 'The delivery PIN must be 4 to 8 digits.'; render(); return; }
+        if (body.packPin && !/^[0-9]{4,8}$/.test(body.packPin)) { S.err = 'The packing PIN must be 4 to 8 digits.'; render(); return; }
         body.discOn = !!S.data.settings.discOn; body.showLanding = !!S.data.settings.showLanding; body.autoOn = !!S.data.settings.autoOn;
         if (['start', 'end', 'cutoff'].some(function (k) { return body[k] !== undefined && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(body[k]); })) { S.err = 'Enter the delivery times as hours and minutes.'; render(); return; }
         if (body.start && body.end && body.start >= body.end) { S.err = 'Delivery must end after it starts.'; render(); return; }

@@ -381,3 +381,23 @@ a{color:inherit}
 .agrid.g4 input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .crow{display:flex;align-items:center;justify-content:space-between;margin:-8px 0 8px;font-size:13px;color:var(--muted-g)}
 .crow .linkbtn{color:var(--muted-g);font-size:14px}
+
+/* offers, coupons, packing */
+.offers{margin-top:24px;display:flex;flex-direction:column;gap:12px}
+.offers .osec{margin:0}
+.orail{display:flex;gap:10px;overflow-x:auto;margin:0 -16px;padding:0 16px 4px;scroll-snap-type:x mandatory;scrollbar-width:none}
+.orail::-webkit-scrollbar{display:none}
+.offc{flex:0 0 auto;min-width:150px;max-width:200px;scroll-snap-align:start;display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:12px 14px;border:0;background:var(--paper);color:var(--ink);text-align:left}
+.offc .pct{font-size:12px;font-weight:700;background:#F2C94C;color:var(--ink);padding:1px 6px;margin-bottom:4px}
+.offc b{font-size:17px;font-weight:600}
+.offc small{font-size:13px;color:var(--muted)}
+.offc .pp{font-size:15px;font-weight:700}
+.offc .pp s{font-weight:500;opacity:.55;margin-right:6px}
+.crow2{display:flex;gap:8px}
+.crow2 input{flex:1 1 auto;min-width:0;text-transform:uppercase}
+.crow2 .btn{height:auto;flex:0 0 auto}
+.cpon{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#DDE8D3;color:#2E4A1F;padding:12px 16px;font-size:15px}
+.cpon .linkbtn{color:#2E4A1F;padding:0}
+.plines{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:16px;line-height:1.35}
+.agrid .span2{grid-column:1 / -1}
+.ptag.offer{background:#F2C94C;color:var(--ink)}

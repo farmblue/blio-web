@@ -38,7 +38,8 @@
     sending: false,
     short: null,
     live: false,
-    cats: CATS.slice(), plan: null, pending: false, apiAt: 0,
+    cats: CATS.slice(), plan: null, pending: false, apiAt: 0, coupon: null, cErr: '', cDraft: '', billFiles: {}, billBusy: '',
+    roles: null, pack: null, dTab: '', packBy: store('packBy') || '', pConfirm: '',
     errors: {},
     last: null,
     upi: '', payee: '',
@@ -163,6 +164,29 @@
   function reloadBtn() {
     return '<button class="linkbtn" data-act="reload"' + (S.reloading ? ' disabled' : '') + '>' + (S.reloading ? 'Refreshing…' : 'Refresh') + '</button>';
   }
+  function b64File(b64, name) {
+    var bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) { arr[i] = bin.charCodeAt(i); }
+    return new File([arr], name || 'Blio bill.pdf', { type: 'application/pdf' });
+  }
+  function shareOrSave(file, text) {
+    var touch = window.matchMedia('(pointer: coarse)').matches;
+    if (touch && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share(text ? { files: [file], text: text } : { files: [file] }).catch(function () {});
+      return;
+    }
+    var u = URL.createObjectURL(file), a = document.createElement('a');
+    a.href = u; a.download = file.name; document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(u); a.remove(); }, 4000);
+  }
+  function getBill(id) {
+    var o = S.myorders.filter(function (x) { return x.id === id; })[0]; if (!o || !o.token) { return; }
+    S.billBusy = id; S.ordErr = ''; keepScroll();
+    fetch(CONFIG.api + '?action=bill&id=' + encodeURIComponent(id) + '&t=' + encodeURIComponent(o.token), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { S.billBusy = ''; if (d.ok) { S.billFiles[id] = b64File(d.b64, d.name); } else { S.ordErr = 'The bill for ' + id + ' isn’t ready yet. Ask us on WhatsApp.'; } keepScroll(); })
+      .catch(function () { S.billBusy = ''; S.ordErr = 'No connection. Couldn’t get the bill.'; keepScroll(); });
+  }
   function lineLabel(l) { return (l.size ? l.size + ' · ' : '') + l.pack + ' · ' + l.cut; }
   function reqUrl(name) {
     return 'https://wa.me/' + CONFIG.whatsapp + '?text=' + encodeURIComponent('Hi Blio, I would like to request ' + (name || 'a fish') + '. Quantity: ');
@@ -174,7 +198,26 @@
     var sub = S.cart.reduce(function (a, l) { return a + l.price * kgOf(l.pack) * l.qty; }, 0);
     var fee = S.form.fulfil === 'delivery' && sub > 0 ? CONFIG.deliveryFee : 0;
     var count = S.cart.reduce(function (a, l) { return a + l.qty; }, 0);
-    return { sub: sub, fee: fee, total: sub + fee, count: count };
+    var disc = S.coupon && S.coupon.sub === sub ? S.coupon.discount : 0;
+    if (S.coupon && S.coupon.sub !== sub && sub > 0 && !S.cChecking) { setTimeout(function () { applyCoupon(S.coupon && S.coupon.code); }, 0); }
+    return { sub: sub, fee: fee, disc: disc, total: sub - disc + fee, count: count };
+  }
+  var COUPON_ERR = { nocode: 'That code isn’t valid.', expired: 'That code has expired.', used: 'This code has already been used with this mobile number.',
+    limit: 'This code has been fully used.' };
+  function couponMsg(d) { return d.error === 'min' ? 'This code needs an order of at least ' + rs(d.min) + '.' : (COUPON_ERR[d.error] || 'Couldn’t check the code. Try again.'); }
+  function applyCoupon(code) {
+    code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code || !CONFIG.api) { return; }
+    var sub = S.cart.reduce(function (a, l) { return a + l.price * kgOf(l.pack) * l.qty; }, 0);
+    S.cChecking = true; S.cErr = ''; if (S.screen === 'slip') { keepScroll(); }
+    fetch(CONFIG.api + '?action=coupon&code=' + encodeURIComponent(code) + '&phone=' + encodeURIComponent(S.form.phone || '') + '&sub=' + Math.round(sub), { cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        S.cChecking = false;
+        if (d.ok) { S.coupon = { code: d.code, discount: d.discount, label: d.label, sub: sub }; } else { S.coupon = null; S.cErr = code + ': ' + couponMsg(d); }
+        if (S.screen === 'slip') { keepScroll(); }
+      })
+      .catch(function () { S.cChecking = false; S.cErr = 'No connection. The code wasn’t checked.'; if (S.screen === 'slip') { keepScroll(); } });
   }
   function saveCart() { store('cart', S.cart); }
   function saveForm() { store('form', { name: S.form.name, phone: S.form.phone, address: S.form.address, area: S.form.area, lat: S.form.lat || null, lng: S.form.lng || null }); }
@@ -194,6 +237,18 @@
     cats.forEach(function (c) { seen[c.name] = 1; });
     S.products.forEach(function (p) { if (!seen[p.group]) { seen[p.group] = 1; cats.push({ name: p.group, mr: '' }); } });
     return cats;
+  }
+  function offersHtml() {
+    var list = [];
+    S.products.forEach(function (p) { p.options.forEach(function (o) { if (o.offer && p.available && kgLeft(p, o.key) > 0) { list.push({ p: p, o: o }); } }); });
+    if (!list.length) { return ''; }
+    return '<section class="offers"><h2 class="osec">Today’s offers</h2><div class="orail">' + list.map(function (x) {
+      var l = kgLeft(x.p, x.o.key);
+      return '<button class="offc press" data-act="offer" data-id="' + esc(x.p.id) + '" data-v="' + esc(x.o.key) + '"><span class="pct">' + x.o.off + '% off</span>' +
+        '<b>' + esc(x.p.name) + '</b><small>' + esc(x.o.size || x.p.en || '') + '</small>' +
+        '<span class="pp num"><s>' + rs(x.o.base) + '</s>' + rs(x.o.price) + '/kg</span>' +
+        (x.p.showLeft !== false && l !== Infinity ? '<small>' + fmtKg(l) + ' left</small>' : '') + '</button>';
+    }).join('') + '</div></section>';
   }
   function offOf(p) { return Math.max.apply(null, p.options.map(function (o) { return o.off || 0; })); }
   function homeHtml(anim) {
@@ -233,6 +288,7 @@
       '<span class="notch" style="left:-13px;bottom:82px"></span><span class="notch" style="right:-13px;bottom:82px"></span>' +
       '<div class="facts"><span><small>Delivered</small><strong>' + (has ? esc(cap(w.delivery)) + ', ' + range() : 'Same evening if you order by ' + fmtT(s.cutoff)) + '</strong></span>' +
       '<span><small>Bought at</small><strong>The morning auction, Goa and Konkan</strong></span></div></div>' +
+      offersHtml() +
       installHtml() +
       (S.reloadErr ? '<div class="box warn" role="alert" style="margin-top:16px">Couldn’t refresh. Check your internet connection.</div>' : '') +
       (has ? '<section class="catch" id="catch"><h2 class="anton">Catch</h2>' +
@@ -304,6 +360,7 @@
         '<div class="hd"><h1 class="anton">Your slip</h1><span>Delivered ' + esc(w.delivery) + ', ' + range() + '</span></div>' +
         '<div class="lines">' + lines + '</div><div class="perf" style="margin:4px 22px 0"></div>' +
         '<div class="sums"><div><span>Subtotal</span><span class="num">' + rs(t.sub) + '</span></div>' +
+        (t.disc ? '<div class="m"><span>Coupon ' + esc(S.coupon.code) + '</span><span class="num">−' + rs(t.disc) + '</span></div>' : '') +
         '<div class="m"><span>Delivery</span><span class="num">' + (t.fee ? rs(t.fee) : 'Free') + '</span></div>' +
         '<div class="t"><span>Estimated total</span><b class="num">' + rs(t.total) + '</b></div>' +
         '<span class="note">Packs are weighed whole, before cleaning. Fish don’t come in exact weights, so we confirm the final bill on WhatsApp before you pay.</span></div>' +
@@ -326,6 +383,10 @@
           '<span class="hint">Optional, but it helps our delivery person find your door.</span></div>'
         : '<div class="box">Collect from the Blio cleaning point in Kolhapur, ' + esc(w.delivery) + ', ' + range() + '. We share the exact location on WhatsApp.</div>') +
       '<div class="fld"><label for="f-notes">Notes (optional)</label><input id="f-notes" data-f="notes" placeholder="Cleaning preferences, timing" value="' + esc(f.notes) + '"></div>' +
+      (S.coupon ? '<div class="cpon"><span><b>' + esc(S.coupon.code) + '</b> applied · ' + esc(S.coupon.label) + (S.cChecking ? ' · checking…' : '') + '</span><button class="linkbtn" data-act="cremove">Remove</button></div>'
+        : '<div class="fld"><label for="f-coupon">Coupon code (optional)</label><div class="crow2"><input id="f-coupon" autocapitalize="characters" autocomplete="off" placeholder="Enter code" value="' + esc(S.cDraft || '') + '">' +
+          '<button class="btn dark press" data-act="capply"' + (S.cChecking ? ' disabled' : '') + '>' + (S.cChecking ? 'Checking…' : 'Apply') + '</button></div>' +
+          (S.cErr ? '<span class="err">' + esc(S.cErr) + '</span>' : '') + '</div>') +
       (S.short ? '<div class="box warn" role="alert">' + esc(S.short) + '</div>' : '') +
       (e.server ? '<div class="box warn" role="alert">We couldn’t place the order. Check your internet connection and try again.</div>' : '') +
       '<button class="btn big press" data-act="send"' + (S.sending ? ' disabled' : '') + '>' + (S.sending ? 'Placing your order…' : 'Place order') + '</button>' +
@@ -402,7 +463,8 @@
       '<div class="obtns">' +
         (onWay && o.rider ? '<a class="btn press wide" href="tel:+91' + esc(o.rider) + '">Call delivery person</a>' : '') +
         (canPay ? '<a class="btn press" href="#pay?o=' + encodeURIComponent(o.id) + '&a=' + Math.round(amount) + '">Pay ' + rs(amount) + '</a>' : '') +
-        (o.bill ? '<a class="btn dark" href="' + esc(o.bill) + '" target="_blank" rel="noopener">View bill</a>' : '') +
+        (o.bill ? (S.billFiles[o.id] ? '<button class="btn dark press" data-act="billopen" data-id="' + esc(o.id) + '">Open bill (PDF)</button>'
+          : '<button class="btn dark press" data-act="billget" data-id="' + esc(o.id) + '"' + (S.billBusy === o.id ? ' disabled' : '') + '>' + (S.billBusy === o.id ? 'Getting bill…' : 'Get bill') + '</button>') : '') +
         '<button class="btn dark press" data-act="reorder" data-id="' + esc(o.id) + '">Order again</button>' +
       '</div></div>';
   }
@@ -474,9 +536,9 @@
           : '<button class="btn press num" data-act="add">Add to slip · ' + rs(o.price * kgOf(k.pack) * k.qty) + '</button></div></div>');
   }
   function findP(id) { return S.products.filter(function (p) { return p.id === id; })[0] || S.products[0]; }
-  function openSheet(id) {
+  function openSheet(id, key) {
     var p = S.products.filter(function (x) { return x.id === id; })[0]; if (!p || !p.available) { return; }
-    var o = p.options.filter(function (x) { return kgLeft(p, x.key) > 0; })[0]; if (!o) { return; }
+    var o = p.options.filter(function (x) { return x.key === key && kgLeft(p, x.key) > 0; })[0] || p.options.filter(function (x) { return kgLeft(p, x.key) > 0; })[0]; if (!o) { return; }
     S.pick = { id: p.id, opt: o.key, pack: kgLeft(p, o.key) >= 1 ? '1 kg' : '500 g', cut: p.cuts[0], qty: 1 };
     sheetEl.innerHTML = sheetHtml(); sheetEl.setAttribute('aria-label', p.name);
     sheetEl.scrollTop = 0; sheetEl.classList.add('show'); scrim.classList.add('show');
@@ -521,7 +583,9 @@
   function waText(o, f) {
     var msg = ['Blio order ' + o.id, 'Delivery: ' + dLabel(o.dDate) + ', ' + range(), ''];
     o.lines.forEach(function (l, i) { msg.push((i + 1) + '. ' + l.name + (l.size ? ' (' + l.size + ')' : '') + ', ' + l.pack + ', ' + l.cut + ' x' + l.qty + ' = ' + rs(l.total)); });
-    msg.push('', 'Subtotal: ' + rs(o.subtotal), 'Delivery: ' + rs(o.fee), 'Estimated total: ' + rs(o.total), '');
+    msg.push('', 'Subtotal: ' + rs(o.subtotal));
+    if (o.discount) { msg.push('Coupon ' + o.coupon + ': -' + rs(o.discount)); }
+    msg.push('Delivery: ' + rs(o.fee), 'Estimated total: ' + rs(o.total), '');
     msg.push('Name: ' + f.name.trim(), 'Mobile: ' + f.phone);
     msg.push('Address: ' + f.address.trim().replace(/\s*\n\s*/g, ', ') + (f.area.trim() ? ', ' + f.area.trim() : ''));
     if (f.lat) { msg.push('Location: https://maps.google.com/?q=' + f.lat + ',' + f.lng); }
@@ -537,7 +601,7 @@
     S.myorders.unshift({ id: o.id, token: o.token || '', placedAt: Date.now(), dDate: o.dDate,
       lines: o.lines, total: o.total, final: '', status: 'New', bill: '' });
     S.myorders = S.myorders.slice(0, 50); store('myorders', S.myorders);
-    S.last = o; S.cart = []; saveCart(); S.form.notes = ''; saveForm(); S.sending = false; S.short = null;
+    S.last = o; S.cart = []; saveCart(); S.form.notes = ''; saveForm(); S.sending = false; S.short = null; S.coupon = null; S.cErr = ''; S.cDraft = '';
     go('done');
   }
   function send() {
@@ -557,12 +621,15 @@
     }
     S.sending = true; keepScroll();
     fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines }) })
+      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines, coupon: S.coupon ? S.coupon.code : '' }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, total: d.total, delivery: d.delivery }); return; }
+        if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, discount: d.discount || 0, coupon: d.coupon || '', total: d.total, delivery: d.delivery }); return; }
         S.sending = false;
-        if (d.error === 'stock') {
+        if (d.error === 'coupon') {
+          S.cErr = (S.coupon ? S.coupon.code + ': ' : '') + couponMsg({ error: d.reason, min: d.min }) + ' Remove it or try another code.';
+          S.cDraft = S.coupon ? S.coupon.code : ''; S.coupon = null;
+        } else if (d.error === 'stock') {
           var msg = 'Some items ran short while you were ordering: ' + d.short.map(function (x) { var hp = S.products.filter(function (q) { return q.name === x.name; })[0], hide = hp && hp.showLeft === false;
             return x.name + (x.size ? ' ' + x.size.toLowerCase() : '') + (x.left ? (hide ? ' (not enough left)' : ' (only ' + fmtKg(x.left) + ' left)') : ' (sold out)'); }).join(', ') + '. Please change your slip and place the order again.';
           loadApi();
@@ -625,9 +692,12 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         S.dLoading = false;
-        if (d.ok) { S.deliv = d.orders; }
+        if (d.ok) {
+          S.roles = d.roles || ['delivery']; S.deliv = d.orders || null; S.pack = d.pack || null;
+          if (S.roles.indexOf(S.dTab) === -1) { S.dTab = S.roles[0]; }
+        }
         else if (d.error === 'locked') { S.dErr = 'Too many wrong PINs. Wait 10 minutes and try again.'; S.dpin = ''; store('dpin', ''); }
-        else { S.dErr = 'That PIN didn’t work. Check the Delivery PIN in the admin sheet.'; S.dpin = ''; store('dpin', ''); S.deliv = null; }
+        else { S.dErr = 'That PIN didn’t work. Ask for the Delivery or Packing PIN set in Blio Admin.'; S.dpin = ''; store('dpin', ''); S.deliv = null; S.pack = null; }
         keepScroll();
       })
       .catch(function () { S.dLoading = false; S.dErr = 'Couldn’t load deliveries. Check your internet connection.'; keepScroll(); });
@@ -666,15 +736,66 @@
       })
       .catch(function () { if (o) { o.saving = false; } S.dErr = 'No connection. ' + id + ' is not marked yet.'; keepScroll(); });
   }
+  function roleTabs() {
+    if (!S.roles || S.roles.length < 2) { return ''; }
+    return '<div class="chiprow" role="group" aria-label="Work">' + S.roles.map(function (r) {
+      return '<button class="chip" data-act="dtab" data-v="' + r + '" aria-pressed="' + (S.dTab === r) + '">' + (r === 'packing' ? 'Packing' : 'Delivery') + '</button>';
+    }).join('') + '</div>';
+  }
+  function packAct(action, id) {
+    if (action === 'packed' && S.pConfirm !== id) { S.pConfirm = id; keepScroll(); return; }
+    S.pConfirm = ''; S.pBusy = id; S.dErr = ''; keepScroll();
+    fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: action, pin: S.dpin, by: S.packBy, id: id }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { S.pBusy = ''; if (d.ok) { loadDeliveries(); } else { S.dErr = d.error === 'role' ? 'This PIN can’t mark orders packed.' : 'Couldn’t update ' + id + '. Refresh and try again.'; keepScroll(); } })
+      .catch(function () { S.pBusy = ''; S.dErr = 'No connection. ' + id + ' is not updated.'; keepScroll(); });
+  }
+  function dayFor(win) { var w = dayWord(String(win || '').slice(0, 10)); return w === 'today' || w === 'tomorrow' ? 'for ' + w : 'for ' + w; }
+  function packingHtml(anim) {
+    var P = S.pack || { orders: [], cutList: [] };
+    var todo = P.orders.filter(function (o) { return o.status === 'Confirmed'; }), done = P.orders.filter(function (o) { return o.status === 'Packed'; });
+    var head = '<div class="dhead"><h1 class="anton">Packing</h1><span class="dcount">' + (S.pack ? todo.length + ' to pack' : '') + '</span></div>' + roleTabs();
+    if (!S.packBy) {
+      return '<div class="stack' + (anim ? ' enter' : '') + '">' + head +
+        '<div class="fld"><label for="p-by">Your name</label><input id="p-by" autocomplete="name" placeholder="Shown next to the orders you pack"></div>' +
+        '<button class="btn big press" data-act="pbyok">Continue</button></div>';
+    }
+    var lineTxt = function (x) { return esc(x.item) + (x.size ? ' (' + esc(x.size.toLowerCase()) + ')' : '') + ', ' + esc(x.pack) + (x.qty > 1 ? ' x' + x.qty : '') + ', ' + esc(x.cut); };
+    return '<div class="stack' + (anim ? ' enter' : '') + '">' + head +
+      (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
+      (S.dLoading && !S.pack ? '<div class="box">Loading orders…</div>' : '') +
+      (P.cutList.length ? '<h2 class="osec">To clean and cut</h2><div class="abuy">' + P.cutList.map(function (c) {
+        return '<div><span>' + esc(c.item) + (c.size ? ' · ' + esc(c.size.toLowerCase()) : '') + '<small class="dsub" style="display:block">' + esc(c.cut) + '</small></span><b class="num">' + fmtKg(c.kg) + '</b></div>';
+      }).join('') + '</div><span class="muted-g" style="text-align:left;margin-top:-6px">Whole weight before cleaning, for orders not packed yet.</span>' : '') +
+      (S.pack && !P.orders.length ? '<div class="box">Nothing to pack right now. Orders show here once they are confirmed in Admin.</div>' : '') +
+      (todo.length ? '<h2 class="osec">To pack</h2>' : '') + todo.map(function (o) {
+        var busy = S.pBusy === o.id;
+        return '<div class="dcard"><span class="stage conf">' + esc(dayFor(o.window)) + '</span>' +
+          '<div class="dtop"><b>' + esc(o.id) + '</b><span class="dsub">' + esc(o.name) + (o.area ? ' · ' + esc(o.area) : '') + '</span></div>' +
+          '<ul class="plines">' + o.lines.map(function (x) { return '<li>' + lineTxt(x) + '</li>'; }).join('') + '</ul>' +
+          (o.notes ? '<p class="dnote">Note: ' + esc(o.notes) + '</p>' : '') +
+          '<button class="btn press' + (S.pConfirm === o.id ? ' confirm' : '') + '" data-act="packed" data-id="' + esc(o.id) + '"' + (busy ? ' disabled' : '') + '>' +
+            (busy ? 'Saving…' : S.pConfirm === o.id ? 'Tap again to confirm packed' : 'Mark packed') + '</button></div>';
+      }).join('') +
+      (done.length ? '<h2 class="osec">Packed</h2>' : '') + done.map(function (o) {
+        return '<div class="dcard"><span class="stage packed">Packed</span><div class="dtop"><b>' + esc(o.id) + '</b><span class="dsub">' + esc(o.name) + (o.area ? ' · ' + esc(o.area) : '') + '</span></div>' +
+          '<span class="dsub">' + esc(o.packedBy) + '</span>' +
+          '<button class="btn dark press" data-act="unpack" data-id="' + esc(o.id) + '"' + (S.pBusy === o.id ? ' disabled' : '') + '>Not packed yet (undo)</button></div>';
+      }).join('') +
+      '<div class="dfoot"><button class="btn dark press" data-act="dreload">' + (S.dLoading ? 'Refreshing…' : 'Refresh') + '</button>' +
+      '<button class="linkbtn light" data-act="pbychange">Not ' + esc(S.packBy) + '?</button>' +
+      '<button class="linkbtn light" data-act="dlogout">Lock this page</button></div>' + installHtml() + '</div>';
+  }
   function deliveryHtml(anim) {
     var head = '<div class="dhead"><h1 class="anton">Delivery</h1>';
     if (!S.dpin) {
-      return '<div class="stack' + (anim ? ' enter' : '') + '">' + head + '</div>' +
-        '<div class="fld"><label for="d-pin">Delivery PIN</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN from the admin sheet"></div>' +
+      return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="dhead"><h1 class="anton">Blio team</h1></div>' +
+        '<div class="fld"><label for="d-pin">Staff PIN</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="Delivery or packing PIN"></div>' +
         (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
-        '<button class="btn big press" data-act="dlogin">Open deliveries</button>' +
-        '<span class="muted-g">For the Blio delivery team only.</span>' + installHtml() + '</div>';
+        '<button class="btn big press" data-act="dlogin">Open</button>' +
+        '<span class="muted-g">For the Blio team only.</span>' + installHtml() + '</div>';
     }
+    if (S.dTab === 'packing') { return packingHtml(anim); }
     var RANK = { 'Arriving next': 0, 'Out for delivery': 1, 'Packed': 2, 'Confirmed': 3 };
     var list = (S.deliv || []).slice().sort(function (a, b) { return (RANK[a.status] || 0) - (RANK[b.status] || 0); });
     var toStart = list.filter(function (o) { return o.status === 'Confirmed' || o.status === 'Packed'; });
@@ -703,7 +824,7 @@
           (o.saving ? 'Saving…' : S.dConfirm === o.id ? 'Tap again to confirm' : 'Mark delivered') + '</button></div>';
     }).join('');
     return '<div class="stack' + (anim ? ' enter' : '') + '">' + head +
-        '<span class="dcount">' + (S.deliv ? list.length + (list.length === 1 ? ' order to deliver' : ' orders to deliver') : '') + '</span></div>' +
+        '<span class="dcount">' + (S.deliv ? list.length + (list.length === 1 ? ' order to deliver' : ' orders to deliver') : '') + '</span></div>' + roleTabs() +
       (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
       (S.dLoading && !S.deliv ? '<div class="box">Loading orders…</div>' : '') +
       (S.deliv && !list.length ? '<div class="box">Nothing to deliver right now. Orders appear here once they are marked Confirmed or Packed in the sheet.</div>' : '') +
@@ -814,6 +935,16 @@
       case 'orders': e.preventDefault(); S.ordNote = ''; go('orders'); loadMyOrders(); break;
       case 'reload': S.reloading = true; S.reloadErr = false; keepScroll(); loadApi(); break;
       case 'ordreload': S.ordNote = ''; loadMyOrders(); break;
+      case 'capply': S.cDraft = ($('#f-coupon') || {}).value || ''; if (S.cDraft.trim()) { applyCoupon(S.cDraft); } else { S.cErr = 'Enter a code first.'; keepScroll(); } break;
+      case 'cremove': S.coupon = null; S.cErr = ''; S.cDraft = ''; keepScroll(); break;
+      case 'offer': openSheet(a.getAttribute('data-id'), v); break;
+      case 'billget': getBill(a.getAttribute('data-id')); break;
+      case 'billopen': var bf = S.billFiles[a.getAttribute('data-id')]; if (bf) { shareOrSave(bf); } break;
+      case 'dtab': S.dTab = v; S.dConfirm = ''; S.pConfirm = ''; render(true); break;
+      case 'pbyok': var pb = (($('#p-by') || {}).value || '').trim(); if (pb) { S.packBy = pb; store('packBy', pb); keepScroll(); } break;
+      case 'pbychange': S.packBy = ''; store('packBy', ''); keepScroll(); break;
+      case 'packed': packAct('packed', a.getAttribute('data-id')); break;
+      case 'unpack': packAct('unpack', a.getAttribute('data-id')); break;
       case 'reorder': reorder(a.getAttribute('data-id')); break;
       case 'mapclose': closeMap(); break;
       case 'locate': locate(); break;
@@ -842,6 +973,7 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && sheetEl.classList.contains('show')) { closeSheet(); }
     if (e.key === 'Escape' && !mapov.hidden) { closeMap(); }
+    if (e.key === 'Enter' && e.target.id === 'f-coupon') { e.preventDefault(); var cb = $('[data-act=capply]'); if (cb) { cb.click(); } }
     if (e.key === 'Enter' && e.target.id === 'd-pin') { var b = $('[data-act=dlogin]'); if (b) { b.click(); } }
   });
 
