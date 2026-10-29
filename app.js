@@ -261,6 +261,26 @@
   var PLUS = '<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="#ECE6D6" stroke-width="2" aria-hidden="true"><path d="M9 2v14M2 9h14"/></svg>';
 
   // ---------- screens ----------
+  /** Open the chosen category and close the others in place, so the lists can fold smoothly instead of the page jumping. */
+  function toggleGroups() {
+    main.querySelectorAll('.group').forEach(function (el) {
+      var on = el.getAttribute('data-g') === S.openGroup, was = el.classList.contains('open'), body = el.querySelector('.gbody');
+      el.classList.toggle('open', on);
+      if (body) { if (on) { body.removeAttribute('inert'); } else { body.setAttribute('inert', ''); } }
+      el.querySelector('.g-head').setAttribute('aria-expanded', String(on));
+      if (on && !was) { el.classList.add('opening'); setTimeout(function () { el.classList.remove('opening'); }, 800); }
+    });
+  }
+  var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function countUp(el, from, to) {
+    if (!el || REDUCED.matches) { return; }
+    var t0 = performance.now(), dur = 360;
+    (function tick(now) {
+      var k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+      el.textContent = rs(from + (to - from) * e);
+      if (k < 1) { requestAnimationFrame(tick); }
+    })(t0);
+  }
   function catList() {
     var cats = S.cats.slice(), seen = {};
     cats.forEach(function (c) { seen[c.name] = 1; });
@@ -313,18 +333,18 @@
       var g = c.name, items = S.products.filter(function (p) { return p.group === g; });
       if (!items.length) { return ''; }
       var open = S.openGroup === g;
-      var rows = open ? '<div class="items">' + items.map(function (p, i) {
+      var rows = '<div class="gbody"' + (open ? '' : ' inert') + '><div><div class="items">' + items.map(function (p, i) {
         var left = p.options.reduce(function (a, o) { return a + (o.left === null || o.left === undefined ? Infinity : o.left); }, 0);
         var out = !p.available || left <= 0, low = !out && p.showLeft !== false && left !== Infinity && left <= 5, off = offOf(p);
         var minP = Math.min.apply(null, p.options.map(function (o) { return o.price; }));
         var sizes = p.options.map(function (o) { return o.size; }).filter(Boolean);
-        return '<button class="row item enter' + (out ? ' out' : '') + '" data-act="item" data-id="' + esc(p.id) + '" style="animation-delay:' + (i * 40) + 'ms"' + (out ? ' aria-disabled="true"' : '') + '>' +
+        return '<button class="row item' + (out ? ' out' : '') + '" data-act="item" data-id="' + esc(p.id) + '" style="--i:' + i + '"' + (out ? ' aria-disabled="true"' : '') + '>' +
           '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.en) + (p.mr ? ' · <span class="mr">' + esc(p.mr) + '</span>' : '') + '</span>' +
           (sizes.length > 1 ? '<span>' + sizes.length + ' sizes</span>' : sizes.length ? '<span>' + esc(sizes[0]) + '</span>' : '') +
           (low || off ? '<span class="tags">' + (off ? '<span class="off">' + off + '% off</span>' : '') + (low ? '<span class="low">Only ' + fmtKg(left) + ' left</span>' : '') + '</span>' : '') + '</span>' +
           '<span class="p num">' + (out ? 'Sold out' : (p.options.length > 1 ? '<small>from</small> ' : '') + rs(minP) + '/kg') + '</span></button>';
-      }).join('') + '</div>' : '';
-      return '<div class="group"><button class="row g-head" data-act="group" data-g="' + esc(g) + '" aria-expanded="' + open + '">' +
+      }).join('') + '</div></div></div>';
+      return '<div class="group' + (open ? ' open' : '') + '" data-g="' + esc(g) + '"><button class="row g-head" data-act="group" data-g="' + esc(g) + '" aria-expanded="' + open + '">' +
         '<span class="lbl">' + esc(g) + '</span><span class="mr">' + esc(c.mr || '') + '</span><span class="n num">' + items.length + '</span>' + PLUS + '</button>' + rows + '</div>';
     }).join('');
     var has = S.products.length > 0, s = sched();
@@ -335,7 +355,7 @@
         '<p>' + esc(w.line) + '</p>' +
         (w.left ? '<div class="count"><b class="num" id="left">' + w.left + '</b><span>left for same-day delivery</span></div>' : '') +
         (has ? '<a class="btn press" href="#catch" data-act="tocatch">Choose from the catch</a>'
-             : '<a class="btn press" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener">Request a fish on WhatsApp</a>') +
+             : S.apiState === 'loading' ? '' : '<a class="btn press" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener">Request a fish on WhatsApp</a>') +
       '</div><div class="perf"></div>' +
       '<span class="notch" style="left:-13px;bottom:82px"></span><span class="notch" style="right:-13px;bottom:82px"></span>' +
       '<div class="facts"><span><small>Delivered</small><strong>' + (has ? esc(cap(w.delivery)) + ', ' + range() : 'Same evening if you order by ' + fmtT(s.cutoff)) + '</strong></span>' +
@@ -348,6 +368,8 @@
         '<div class="crow"><span>' + (S.checkedAt ? 'Updated ' + new Date(S.checkedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '') + '</span>' + reloadBtn() + '</div>' +
         '<div class="groups">' + groups + '</div>' +
         '<a class="reqlink" href="' + esc(reqUrl('')) + '" target="_blank" rel="noopener"><b>Don’t see your fish?</b><span>Request it on WhatsApp and we’ll look for it on our next harbour run.</span></a></section>'
+        : S.apiState === 'loading' ? '<section class="catch" aria-busy="true"><h2 class="anton">Catch</h2><div class="skel" aria-hidden="true">' +
+            [0, 1, 2, 3, 4].map(function (i) { return '<div class="sk-row"><span class="sk sk-a" style="width:' + [46, 38, 52, 34, 44][i] + '%"></span><span class="sk sk-b"></span></div>'; }).join('') + '</div></section>'
         : '<div class="box chbox" style="margin-top:24px"><span>' + (S.pending ? 'This page checks for the catch every minute.' : 'Check again for new catch.') + '</span>' + reloadBtn() + '</div>') +
       whyHtml() +
       '<section class="how"><div class="rhead"><h2 class="anton">Boat to door</h2>' + arrows() + '</div><div class="rail-bar"><span id="railbar"></span></div>' +
@@ -450,6 +472,10 @@
       '</div>';
   }
 
+  function stampHtml() {
+    var n = istNow();
+    return '<div class="stamp" aria-hidden="true"><span>Blio</span><b>Received</b><span>' + n.getDate() + ' ' + MSHORT[n.getMonth()] + '</span></div>';
+  }
   function doneHtml(anim) {
     var o = S.last || {};
     return '<div class="stack' + (anim ? ' enter' : '') + '"><div class="ticket">' +
@@ -457,9 +483,9 @@
       '<p>Order ' + esc(o.id) + ' for ' + rs(o.total || 0) + '. ' + (o.payBy === 'Now (UPI)' && S.upi ? 'Send it to us on WhatsApp, then pay by UPI.' : 'One last step: send it to us on WhatsApp so we can confirm it. You pay at delivery.') + '</p>' +
       '<a class="btn big press" href="' + esc(o.url) + '" target="_blank" rel="noopener">Send on WhatsApp</a>' +
       (o.payBy === 'Now (UPI)' && S.upi ? '<a class="btn big dark press" href="#pay?o=' + encodeURIComponent(o.id) + '&a=' + Math.round(o.total || 0) + '">Pay ' + rs(o.total || 0) + ' by UPI</a>' : '') + '</div>' +
-      '<div class="perf"></div><div style="padding:18px 22px 24px;display:flex;flex-direction:column;gap:12px">' +
+      '<div class="perf"></div><div class="tlow">' +
       '<span class="note">Delivered ' + esc(o.delivery) + ', ' + range() + '</span>' +
-      progressHtml(0) + '</div></div>' +
+      progressHtml(0) + stampHtml() + '</div></div>' +
       '<button class="btn dark press" data-act="orders">Track this order</button>' +
       '<button class="btn dark press" data-act="home">Back to the catch</button></div>';
   }
@@ -467,9 +493,12 @@
   // ---------- my orders ----------
   var STEP_OF = { 'New': 0, 'Confirmed': 1, 'Paid': 1, 'Packed': 2, 'Collected': 2, 'Out for delivery': 3, 'Arriving next': 3, 'Delivered': 4 };
   var STEP_LABELS = ['Placed', 'Accepted', 'Packed', 'On the way', 'Delivered'];
-  function progressHtml(step) {
-    return '<div class="progress p5">' + STEP_LABELS.map(function (l, i) { return '<span' + (i <= step ? ' class="on"' : '') + '></span>'; }).join('') + '</div>' +
-      '<div class="plabels p5">' + STEP_LABELS.map(function (l, i) { return i === step ? '<b>' + l + '</b>' : '<span>' + l + '</span>'; }).join('') + '</div>';
+  function progressHtml(step, from) {
+    if (from === undefined || from > step) { from = step; }
+    return '<div class="progress p5">' + STEP_LABELS.map(function (l, i) {
+      return i <= from ? '<span class="on"></span>' : i <= step ? '<span class="grow" style="--k:' + (i - from - 1) + '"></span>' : '<span></span>';
+    }).join('') + '</div>' +
+      '<div class="plabels p5">' + STEP_LABELS.map(function (l, i) { return i === step ? '<b' + (step > from ? ' class="grow"' : '') + '>' + l + '</b>' : '<span>' + l + '</span>'; }).join('') + '</div>';
   }
   function timeOf(t) { var p = String(t || '').split(', '); return p[1] || p[0] || ''; }
   function loadMyOrders() {
@@ -517,7 +546,7 @@
       '<div class="dtop"><b>' + esc(o.id) + '</b><span class="num">' + rs(amount) + '</span></div>' +
       '<span class="dsub">' + when + ' · for ' + esc(o.dDate ? dLabel(o.dDate) : (o.delivery || '')) + payTag + '</span>' +
       '<p class="ditems">' + items + '</p>' +
-      '<p class="ostat">' + esc(text) + '</p>' + (st === 'Cancelled' ? '' : progressHtml(STEP_OF[st])) +
+      '<p class="ostat">' + esc(text) + '</p>' + (st === 'Cancelled' ? '' : progressHtml(STEP_OF[st], typeof o.seenStep === 'number' ? o.seenStep : STEP_OF[st])) +
       '<div class="obtns">' +
         (onWay && o.rider ? '<a class="btn press wide" href="tel:+91' + esc(o.rider) + '">Call delivery person</a>' : '') +
         (canPay ? '<a class="btn press" href="#pay?o=' + encodeURIComponent(o.id) + '&a=' + Math.round(amount) + '">Pay ' + rs(amount) + '</a>' : '') +
@@ -660,6 +689,7 @@
     S.myorders.unshift({ id: o.id, token: o.token || '', placedAt: Date.now(), dDate: o.dDate, payBy: o.payBy || '',
       lines: o.lines, total: o.total, final: '', status: 'New', bill: '' });
     S.myorders = S.myorders.slice(0, 50); store('myorders', S.myorders);
+    if (!REDUCED.matches) { setTimeout(function () { try { if (navigator.vibrate) { navigator.vibrate(12); } } catch (e) {} }, 560); }
     S.last = o; S.cart = []; saveCart(); S.form.notes = ''; saveForm(); S.sending = false; S.short = null; S.coupon = null; S.cErr = ''; S.cDraft = '';
     go('done');
   }
@@ -945,6 +975,7 @@
 
   // ---------- render ----------
   function render(anim) {
+    if (anim) { main.setAttribute('data-dir', S.navDir || ''); }
     if (S.screen === 'home') { main.innerHTML = homeHtml(anim); bindRail(); fitArrows(); }
     else if (S.screen === 'slip') { main.innerHTML = slipHtml(anim); }
     else if (S.screen === 'delivery') { main.innerHTML = deliveryHtml(anim); }
@@ -955,10 +986,22 @@
     var t = totals();
     bar.innerHTML = '<span class="l"><small>Your slip</small><span class="c" id="cnt">' + t.count + (t.count === 1 ? ' item' : ' items') + '</span></span>' +
       '<span class="s num">' + rs(t.sub) + '</span><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#12272C" stroke-width="2.25" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
+    var wasShown = bar.classList.contains('show');
     bar.classList.toggle('show', S.cart.length > 0 && S.screen === 'home');
     bar.tabIndex = bar.classList.contains('show') ? 0 : -1;
+    if (wasShown && S.prevSub !== undefined && t.sub > S.prevSub && S.screen === 'home') {
+      countUp(bar.querySelector('.s'), S.prevSub, t.sub);
+      bar.classList.remove('lift'); void bar.offsetWidth; bar.classList.add('lift');
+    }
+    S.prevSub = t.sub;
+    if (S.screen === 'orders') {   // remember the stage each order was last seen at, so the bar only fills once
+      var changed = false;
+      S.myorders.forEach(function (o) { var k = STEP_OF[o.status === 'Paid' ? 'Confirmed' : (o.status || 'New')]; if (typeof k === 'number' && o.seenStep !== k) { o.seenStep = k; changed = true; } });
+      if (changed) { store('myorders', S.myorders); }
+    }
   }
-  function go(screen) {
+  function go(screen, isBack) {
+    S.navDir = isBack || screen === 'home' ? 'back' : 'fwd';
     S.screen = screen; S.errors = {};
     try { history.pushState({ s: screen }, '', screen === 'home' ? '/' : '#' + screen); } catch (e) {}
     render(true); main.scrollTop = 0;
@@ -979,6 +1022,7 @@
     render(true);
   }
   window.addEventListener('popstate', function () {
+    S.navDir = 'back';
     if (sheetEl.classList.contains('show')) { closeSheet(); }
     if (!mapov.hidden) { closeMap(); }
     enterRoute();
@@ -994,7 +1038,7 @@
     var a = e.target.closest('[data-act]'); if (!a) { return; }
     var act = a.getAttribute('data-act'), v = a.getAttribute('data-v'), i = +a.getAttribute('data-i');
     switch (act) {
-      case 'group': S.groupTouched = true; S.openGroup = S.openGroup === a.getAttribute('data-g') ? '' : a.getAttribute('data-g'); var st = main.scrollTop; render(false); main.scrollTop = st; break;
+      case 'group': S.groupTouched = true; S.openGroup = S.openGroup === a.getAttribute('data-g') ? '' : a.getAttribute('data-g'); toggleGroups(); break;
       case 'item': openSheet(a.getAttribute('data-id')); break;
       case 'tocatch': e.preventDefault(); var c = $('#catch'); if (c) { c.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); } break;
       case 'pack': S.pick.pack = v; rerenderSheet(); break;

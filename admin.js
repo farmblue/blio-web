@@ -431,6 +431,9 @@
     }
     main.innerHTML = ({ orders: ordersHtml, stock: stockHtml, fish: fishHtml, settings: settingsHtml }[S.tab] || ordersHtml)();
     main.scrollTop = keepY;
+    // a new confirmation or error slides in once; the same message is not re-animated on later redraws
+    var msg = (S.note || '') + '|' + (S.warn || '') + '|' + (S.err || '');
+    if (msg !== S.shownMsg) { main.querySelectorAll('.box.ok, .box.warn').forEach(function (b) { b.classList.add('pop'); }); S.shownMsg = msg; }
     main.querySelectorAll('.chiprow').forEach(function (r) { var on = r.querySelector('[aria-pressed=true]'); if (on && (on.offsetLeft + on.offsetWidth > r.scrollLeft + r.clientWidth || on.offsetLeft < r.scrollLeft)) { r.scrollLeft = on.offsetLeft - 16; } });
     if (focus && document.getElementById(focus)) { document.getElementById(focus).focus(); }
   }
