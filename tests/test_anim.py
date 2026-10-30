@@ -1,0 +1,46 @@
+import os,datetime,urllib.request
+from playwright.sync_api import sync_playwright
+S=__import__('os').path.dirname(__import__('os').path.abspath(__file__)); FD=S+'/fonts/node_modules/@fontsource'; B='http://127.0.0.1:8800'; errs=[]
+urllib.request.urlopen(B+'/__now?t=2026-10-28T05:00:00Z').read()
+T=datetime.datetime(2026,10,28,5,0,tzinfo=datetime.timezone.utc)
+hold={'on':True,'q':[]}
+def api(r):
+    if hold['on'] and 'action' not in r.request.url and r.request.method=='GET': hold['q'].append(r); return
+    r.fulfill(response=r.fetch(url=B+'/exec'+(r.request.url.split('/exec',1)[1])))
+with sync_playwright() as p:
+    ctx=p.chromium.launch().new_context(viewport={'width':390,'height':844},device_scale_factor=2)
+    ctx.route('https://fonts.googleapis.com/**',lambda r:r.fulfill(path=S+'/fonts.css',content_type='text/css'))
+    ctx.route('http://fontlocal/**',lambda r:r.fulfill(path=os.path.join(FD,r.request.url.split('fontlocal/')[1]),content_type='font/woff2'))
+    ctx.route('https://script.google.com/**',api)
+    c=ctx.new_page(); c.clock.set_fixed_time(T); c.on('pageerror',lambda e: errs.append(str(e)))
+    c.goto(B+'/'); c.wait_for_timeout(600); c.locator('.skel').scroll_into_view_if_needed(); c.wait_for_timeout(300); c.screenshot(path=S+'/v1-skeleton.png')
+    print('skeleton rows:', c.locator('.sk-row').count())
+    hold['on']=False
+    for r in hold['q']: r.fulfill(response=r.fetch(url=B+'/exec'))
+    c.wait_for_timeout(1000)
+    print('groups:', c.locator('.group').count(), 'open:', c.locator('.group.open').count())
+    g=c.locator('.group .gbody').first; print('open body height:', g.evaluate('e=>e.getBoundingClientRect().height'))
+    c.click('.group.open .g-head'); c.wait_for_timeout(120); mid=g.evaluate('e=>e.getBoundingClientRect().height'); c.wait_for_timeout(400)
+    print('closing: mid', mid, 'end', g.evaluate('e=>e.getBoundingClientRect().height'), 'inert', g.evaluate('e=>e.hasAttribute("inert")'))
+    c.click('.g-head'); c.wait_for_timeout(500); print('reopened:', c.locator('.group.open').count())
+    c.click('[data-act=item][data-id=bangda]'); c.wait_for_timeout(400); c.click('[data-act=add]'); c.wait_for_timeout(700)
+    print('bar:', c.locator('#slipbar .s').inner_text())
+    c.click('[data-act=item][data-id=surmai]'); c.wait_for_timeout(400); c.click('[data-act=add]'); c.wait_for_timeout(120)
+    print('bar mid count-up:', c.locator('#slipbar .s').inner_text(), 'lift:', c.evaluate("document.getElementById('slipbar').classList.contains('lift')"))
+    c.wait_for_timeout(500); print('bar end:', c.locator('#slipbar .s').inner_text())
+    c.click('#slipbar'); c.wait_for_timeout(50); print('dir to slip:', c.evaluate("document.getElementById('main').dataset.dir"))
+    c.fill('#f-name','Asha'); c.fill('#f-phone','9876543210'); c.fill('#f-addr','x'); c.click('[data-act=send]'); c.wait_for_timeout(1200)
+    c.screenshot(path=S+'/v2-stamp.png')
+    c.click('#back'); c.wait_for_timeout(50); print('dir back:', c.evaluate("document.getElementById('main').dataset.dir"))
+    c.goto(B+'/#orders'); c.wait_for_timeout(1200)
+    a=ctx.new_page(); a.clock.set_fixed_time(T); a.on('pageerror',lambda e: errs.append(str(e)))
+    a.goto(B+'/admin/'); a.fill('#a-by','M'); a.fill('#a-pw','fish-2026!'); a.click('[data-act=login]'); a.wait_for_timeout(800)
+    a.click('.aorder-head[data-id="BL2810-001"]'); a.click('[data-act=stage][data-id="BL2810-001"][data-v=Confirmed]'); a.wait_for_timeout(500)
+    print('admin pop:', a.locator('.box.ok.pop').count())
+    a.click('.aorder-head[data-id="BL2810-001"]'); a.wait_for_timeout(200); print('pop after unrelated redraw:', a.locator('.box.ok.pop').count())
+    a.click('.aorder-head[data-id="BL2810-001"]'); a.click('[data-act=stage][data-id="BL2810-001"][data-v=Packed]'); a.wait_for_timeout(500)
+    c.click('[data-act=ordreload]'); c.wait_for_timeout(1000)
+    print('grow segments:', c.locator('.progress span.grow').count(), 'label grow:', c.locator('.plabels b.grow').count())
+    c.screenshot(path=S+'/v3-progress.png')
+    c.click('[data-act=ordreload]'); c.wait_for_timeout(1000); print('after second refresh grow:', c.locator('.progress span.grow').count())
+print(errs)
