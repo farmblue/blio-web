@@ -661,8 +661,8 @@
 
   // ---------- order ----------
   function orderId() {
-    var n = istNow();
-    return 'BL' + String(n.getDate()).padStart(2, '0') + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(Math.floor(100 + Math.random() * 900));
+    // Preview only: the real number comes from the server (BL-<year>-<count>).
+    return 'BL-' + istNow().getFullYear() + '-' + String(Math.floor(1 + Math.random() * 9999)).padStart(4, '0');
   }
   function dLabel(ds) {
     var p = String(ds || '').split('-'); if (p.length !== 3) { return String(ds || ''); }
@@ -705,7 +705,7 @@
     var lines = S.cart.map(function (l) { return { name: l.name, key: l.opt || '', size: l.size || '', pack: l.pack, cut: l.cut, qty: l.qty, total: l.price * kgOf(l.pack) * l.qty }; });
     if (!CONFIG.api) {
       var t = totals(), n = istNow();
-      finish({ id: 'BL' + String(n.getDate()).padStart(2, '0') + String(n.getMonth() + 1).padStart(2, '0') + '-' + Math.floor(100 + Math.random() * 900), lines: lines, subtotal: t.sub, fee: t.fee, total: t.total });
+      finish({ id: orderId(), lines: lines, subtotal: t.sub, fee: t.fee, total: t.total });
       return;
     }
     S.sending = true; keepScroll();
