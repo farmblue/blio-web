@@ -42,26 +42,26 @@ with sync_playwright() as p:
     print('done pay button:', c.locator('a.btn', has_text='by UPI').count())
     # admin confirm both + bill 1
     a.click('[data-act=tab][data-v=orders]'); a.click('[data-act=refresh]'); a.wait_for_timeout(800)
-    for oid in ['BL2810-001','BL2810-002']:
+    for oid in ['BL-26-10-0001','BL-26-10-0002']:
         a.click('.aorder-head[data-id="%s"]'%oid); a.wait_for_timeout(150); a.click('[data-act=stage][data-id="%s"][data-v=Confirmed]'%oid); a.wait_for_timeout(400)
-    a.click('.aorder-head[data-id="BL2810-001"]'); a.wait_for_timeout(150); a.click('[data-act=bill][data-id="BL2810-001"]'); a.wait_for_timeout(700)
+    a.click('.aorder-head[data-id="BL-26-10-0001"]'); a.wait_for_timeout(150); a.click('[data-act=bill][data-id="BL-26-10-0001"]'); a.wait_for_timeout(700)
     html=urllib.request.urlopen(B+'/__bill').read().decode()
     print('bill bits:', re.findall(r'15% offer[^<]*|Coupon [^<]*|Pay on delivery[^<]*|Coupons don[^<]*', html))
     # packing
     st=page(); st.goto(B+'/delivery/'); st.wait_for_timeout(400); st.click('[data-act=lrole][data-v=packing]'); st.fill('#d-pin','222222'); st.click('[data-act=dlogin]'); st.wait_for_timeout(500)
     st.fill('#p-by','Ravi'); st.click('[data-act=pbyok]'); st.wait_for_timeout(200)
     print('packing shows name?', 'Asha' in st.locator('#main').inner_text(), 'Shahupuri' in st.locator('#main').inner_text())
-    for oid in ['BL2810-001','BL2810-002']:
+    for oid in ['BL-26-10-0001','BL-26-10-0002']:
         st.click('[data-act=packed][data-id="%s"]'%oid); st.click('[data-act=packed][data-id="%s"]'%oid); st.wait_for_timeout(700)
     st.screenshot(path=S+'/f6-packing.png')
     # rider
     st.click('[data-act=dlogout]'); st.click('[data-act=lrole][data-v=delivery]'); st.fill('#d-pin','111111'); st.click('[data-act=dlogin]'); st.wait_for_timeout(600)
     st.screenshot(path=S+'/f7-rider.png')
-    st.click('[data-act=dcollect][data-id="BL2810-001"]'); st.wait_for_timeout(600)
+    st.click('[data-act=dcollect][data-id="BL-26-10-0001"]'); st.wait_for_timeout(600)
     print('warn:', st.locator('.box.warn').first.inner_text() if st.locator('.box.warn').count() else 'none', '| start:', st.locator('[data-act=dstart]').inner_text())
     st.click('[data-act=dstart]'); st.click('[data-act=dstart]'); st.wait_for_timeout(700)
     st.screenshot(path=S+'/f8-out.png')
-    st.click('[data-act=ddone][data-id="BL2810-001"][data-v=Cash]'); st.click('[data-act=ddone][data-id="BL2810-001"][data-v=Cash]'); st.wait_for_timeout(700)
+    st.click('[data-act=ddone][data-id="BL-26-10-0001"][data-v=Cash]'); st.click('[data-act=ddone][data-id="BL-26-10-0001"][data-v=Cash]'); st.wait_for_timeout(700)
     print('remaining rider orders:', st.locator('.dcard').count())
     a.click('[data-act=refresh]'); a.wait_for_timeout(800); a.screenshot(path=S+'/f9-admin.png')
     print('cash box:', a.locator('.box', has_text='Collected at the door').inner_text())

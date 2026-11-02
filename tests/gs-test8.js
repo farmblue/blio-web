@@ -31,7 +31,7 @@ const ist=d=>new Date(d.getTime()+330*60000), p2=n=>String(n).padStart(2,'0'), D
 Object.assign(ctx,{Date:FD,
  SpreadsheetApp:{getActiveSpreadsheet:()=>({getSheetByName:n=>sheets[n],insertSheet:n=>(sheets[n]=new Sheet(n,[])),getUrl:()=>'URL',getSpreadsheetTimeZone:()=>'Asia/Kolkata'}),newDataValidation:()=>({requireValueInList(){return this},setAllowInvalid(){return this},build(){return 1}})},
  Utilities:{base64Encode:a=>Buffer.from(a).toString('base64'),newBlob:(h,t,n)=>({getAs:()=>{const o={name:n,getBytes:()=>[37,80,68,70],setName(x){o.name=x;return o}};return o}}),getUuid:()=>'a1b2c3d4e5f67890abcdef',formatDate:(d,tz,f)=>{const t=ist(d);
-   const map={'H':String(t.getUTCHours()),'m':String(t.getUTCMinutes()),'u':String(t.getUTCDay()||7),'yyyy-MM-dd':t.getUTCFullYear()+'-'+p2(t.getUTCMonth()+1)+'-'+p2(t.getUTCDate()),
+   const map={'yy-MM':String(t.getUTCFullYear()).slice(-2)+'-'+p2(t.getUTCMonth()+1),'yy':String(t.getUTCFullYear()).slice(-2),'MM':p2(t.getUTCMonth()+1),'yyyy':String(t.getUTCFullYear()),'H':String(t.getUTCHours()),'m':String(t.getUTCMinutes()),'u':String(t.getUTCDay()||7),'yyyy-MM-dd':t.getUTCFullYear()+'-'+p2(t.getUTCMonth()+1)+'-'+p2(t.getUTCDate()),
      'yyyy-MM-dd HH:mm':t.getUTCFullYear()+'-'+p2(t.getUTCMonth()+1)+'-'+p2(t.getUTCDate())+' '+p2(t.getUTCHours())+':'+p2(t.getUTCMinutes()),
      'ddMM':p2(t.getUTCDate())+p2(t.getUTCMonth()+1),'yyyy-MM-dd EEE':t.getUTCFullYear()+'-'+p2(t.getUTCMonth()+1)+'-'+p2(t.getUTCDate())+' '+DN[t.getUTCDay()],
      'dd MMM yyyy, h:mm a':p2(t.getUTCDate())+' '+MN[t.getUTCMonth()]+' '+t.getUTCFullYear()+', '+((t.getUTCHours()%12)||12)+':'+p2(t.getUTCMinutes())+' '+(t.getUTCHours()<12?'AM':'PM')};
@@ -69,15 +69,15 @@ r=post({name:'B',phone:'9876543211',address:'y',items:[{name:'Bangda',key:opt('B
 L=A({op:'load'}); L.orders.forEach(o=>A({op:'order',id:o.id,status:'Confirmed'}));
 // staff roles
 let d=get({action:'deliveries',pin:'222222'}); console.log('packer roles', JSON.stringify(d.roles), 'orders?', !!d.orders, 'cut list', JSON.stringify(d.pack.cutList), 'first', JSON.stringify(d.pack.orders[0]));
-console.log('rider start with packer pin', JSON.stringify(post({action:'start',pin:'222222',ids:['BL2810-001']})));
-console.log('packed', JSON.stringify(post({action:'packed',pin:'222222',by:'Ravi',id:'BL2810-001'})), 'packed by rider pin', JSON.stringify(post({action:'packed',pin:'111111',id:'BL2810-002'})));
+console.log('rider start with packer pin', JSON.stringify(post({action:'start',pin:'222222',ids:['BL-26-10-0001']})));
+console.log('packed', JSON.stringify(post({action:'packed',pin:'222222',by:'Ravi',id:'BL-26-10-0001'})), 'packed by rider pin', JSON.stringify(post({action:'packed',pin:'111111',id:'BL-26-10-0002'})));
 d=get({action:'deliveries',pin:'222222'}); console.log('after pack statuses', d.pack.orders.map(o=>o.id+':'+o.status+':'+o.packedBy).join(' '), 'cut list now', JSON.stringify(d.pack.cutList));
-console.log('unpack', post({action:'unpack',pin:'222222',id:'BL2810-001'}).ok);
+console.log('unpack', post({action:'unpack',pin:'222222',id:'BL-26-10-0001'}).ok);
 d=get({action:'deliveries',pin:'111111'}); console.log('rider roles', JSON.stringify(d.roles), d.orders.length, !!d.pack);
 // bills
-let b=A({op:'bill',id:'BL2810-001'}); console.log('bill', b.ok, b.name, b.b64, b.msg.split('\n')[2]);
+let b=A({op:'bill',id:'BL-26-10-0001'}); console.log('bill', b.ok, b.name, b.b64, b.msg.split('\n')[2]);
 let tok=sheets.Orders.d[1][sheets.Orders.d[0].indexOf('Token')];
-console.log('cust bill', JSON.stringify(get({action:'bill',id:'BL2810-001',t:tok})), 'wrong token', JSON.stringify(get({action:'bill',id:'BL2810-001',t:'zzzzzzzzzzzzzzzz'})));
-console.log('myorders bill flag', JSON.stringify(get({action:'myorders',ids:'BL2810-001:'+tok}).orders[0].bill));
-console.log('admin billpdf', JSON.stringify(A({op:'billpdf',id:'BL2810-001'})));
-L=A({op:'load'}); console.log('coupons', JSON.stringify(L.coupons.map(c=>[c.code,c.used,c.expired])), 'order coupon', L.orders.find(o=>o.id==='BL2810-001').coupon, L.orders.find(o=>o.id==='BL2810-001').discount);
+console.log('cust bill', JSON.stringify(get({action:'bill',id:'BL-26-10-0001',t:tok})), 'wrong token', JSON.stringify(get({action:'bill',id:'BL-26-10-0001',t:'zzzzzzzzzzzzzzzz'})));
+console.log('myorders bill flag', JSON.stringify(get({action:'myorders',ids:'BL-26-10-0001:'+tok}).orders[0].bill));
+console.log('admin billpdf', JSON.stringify(A({op:'billpdf',id:'BL-26-10-0001'})));
+L=A({op:'load'}); console.log('coupons', JSON.stringify(L.coupons.map(c=>[c.code,c.used,c.expired])), 'order coupon', L.orders.find(o=>o.id==='BL-26-10-0001').coupon, L.orders.find(o=>o.id==='BL-26-10-0001').discount);
