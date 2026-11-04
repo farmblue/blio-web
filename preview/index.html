@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blio · Preview</title>
+<meta name="description" content="A preview of Blio: fresh fish from the Konkan harbours, cleaned in Kolhapur, delivered the same evening. Coming soon.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#12404A">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&family=Mukta:wght@400;600;700&display=swap">
+<!--
+  Blio preview: a show-only walkthrough for survey students to show people what Blio is.
+  It places no orders, collects no data and talks to no server. All prices and times are examples.
+-->
+<style>
+:root{
+  --ground:#12404A; --raised:#195360; --raised-press:#1F606E; --deep:#0C2E35;
+  --paper:#ECE6D6; --paper-2:#DCD4BF; --paper-3:#CFC6AE;
+  --ink:#12272C; --muted:#4E5C58; --muted-g:#B4C8CA; --body-g:#D3DEDD;
+  --action:#C2462A; --fresh:#3E8E5A; --day2:#C98A1B;
+  --ease:cubic-bezier(0.23,1,0.32,1);
+  --top-h:56px; --tab-h:64px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--deep)}
+body{font-family:'Work Sans','Mukta',system-ui,sans-serif;color:var(--paper);-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
+html[lang="mr"] body{font-family:'Mukta','Work Sans',system-ui,sans-serif}
+button{font:inherit;color:inherit;-webkit-tap-highlight-color:transparent;touch-action:manipulation;cursor:pointer}
+a{color:inherit}
+.anton{font-family:'Anton','Mukta',sans-serif;font-weight:400;letter-spacing:-0.01em;text-transform:uppercase}
+html[lang="mr"] .anton{font-family:'Mukta',sans-serif;font-weight:700;letter-spacing:0;text-transform:none}
+.mr{font-family:'Mukta',sans-serif}
+[hidden]{display:none!important}
+
+.app{position:relative;max-width:480px;margin:0 auto;height:100vh;height:100dvh;overflow:hidden;background:var(--ground)}
+.top{position:absolute;top:0;left:0;right:0;z-index:5;height:calc(var(--top-h) + env(safe-area-inset-top));padding:env(safe-area-inset-top) 16px 0;display:flex;align-items:center;gap:10px;background:var(--ground)}
+.top img{height:34px;width:auto;display:block}
+.lang{margin-left:auto;display:flex;background:var(--raised);padding:3px;gap:2px}
+.lang button{border:0;background:transparent;height:34px;padding:0 12px;font-size:14px;font-weight:600;color:var(--muted-g)}
+.lang button[aria-pressed="true"]{background:var(--paper);color:var(--ink)}
+.banner{position:absolute;top:calc(var(--top-h) + env(safe-area-inset-top));left:0;right:0;z-index:4;height:30px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--action);color:#fff;font-size:13px;font-weight:600;letter-spacing:.02em}
+.main{position:absolute;top:calc(var(--top-h) + 30px + env(safe-area-inset-top));left:0;right:0;bottom:calc(var(--tab-h) + env(safe-area-inset-bottom));overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+.wrap{padding:16px 16px 32px}
+.view{animation:enter 280ms var(--ease) both}
+@keyframes enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.view{animation:none}}
+
+/* tab bar */
+.tabs{position:absolute;left:0;right:0;bottom:0;z-index:6;height:calc(var(--tab-h) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);display:grid;grid-template-columns:repeat(4,1fr);background:var(--deep);border-top:1px solid var(--raised)}
+.tabs button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:600;color:var(--muted-g)}
+.tabs button svg{width:24px;height:24px}
+.tabs button[aria-current="page"]{color:var(--paper)}
+.tabs button[aria-current="page"] svg{color:var(--action)}
+
+/* home */
+.ticket{background:var(--paper);color:var(--ink)}
+.ticket .in{padding:22px 20px 20px;display:flex;flex-direction:column;gap:12px}
+.ticket .kick{font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--action)}
+html[lang="mr"] .ticket .kick{letter-spacing:0;font-size:15px}
+.ticket h1{margin:0;font-size:clamp(44px,13vw,60px);line-height:.9}
+html[lang="mr"] .ticket h1{font-size:clamp(36px,10.5vw,48px);line-height:1.1}
+.ticket p{margin:0;font-size:17px;line-height:1.45}
+.perf{border-top:4px dotted var(--ink);margin:0 16px;opacity:.6}
+.facts{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:18px 20px 20px}
+.facts span{display:flex;flex-direction:column;gap:2px}
+.facts small{font-size:13px;color:var(--muted)}
+.facts strong{font-size:16px;font-weight:600}
+.btn{height:52px;display:flex;align-items:center;justify-content:center;gap:8px;border:0;background:var(--action);color:#fff;font-size:16px;font-weight:600;text-decoration:none;padding:0 18px;width:100%}
+.btn.dark{background:var(--raised);color:var(--paper)}
+.btn.wa{background:#1F7A4D}
+.btn[disabled]{background:var(--paper-3);color:var(--muted);cursor:not-allowed}
+.btn:active:not([disabled]){transform:scale(.98)}
+h2.sec{margin:36px 0 12px;font-size:34px;line-height:.95}
+html[lang="mr"] h2.sec{font-size:28px;line-height:1.15}
+.lead{margin:0 0 16px;font-size:16px;line-height:1.5;color:var(--body-g)}
+.journey{display:flex;flex-direction:column;gap:0;background:var(--raised);padding:6px 0}
+.jrow{display:flex;gap:14px;padding:12px 16px;align-items:flex-start}
+.jrow .ic{flex:0 0 44px;height:44px;display:flex;align-items:center;justify-content:center;background:var(--ground)}
+.jrow b{display:block;font-size:16px}
+.jrow span{display:block;font-size:14px;color:var(--muted-g);margin-top:2px;line-height:1.4}
+.end{margin-top:36px;background:var(--paper);color:var(--ink);padding:22px 20px;display:flex;flex-direction:column;gap:12px}
+.end h3{margin:0;font-size:30px;line-height:1}
+html[lang="mr"] .end h3{font-size:26px;line-height:1.2}
+.end p{margin:0;font-size:15px;line-height:1.5;color:var(--muted)}
+
+/* catch */
+.chips{display:flex;gap:8px;overflow-x:auto;margin:0 -16px 14px;padding:0 16px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;height:38px;padding:0 14px;border:1px solid var(--raised-press);background:transparent;color:var(--paper);font-size:14px;font-weight:600}
+.chip[aria-pressed="true"]{background:var(--paper);color:var(--ink);border-color:var(--paper)}
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{display:flex;gap:12px;width:100%;border:0;padding:12px;background:var(--raised);color:var(--paper);text-align:left;align-items:center}
+.card:active{background:var(--raised-press)}
+.card .art{flex:0 0 84px;height:84px;background:var(--paper);display:flex;align-items:center;justify-content:center}
+.card .art svg{width:76px;height:76px}
+.card .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.card .t b{font-size:17px}
+.card .t .sub{font-size:13px;color:var(--muted-g)}
+.card .src{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--body-g)}
+.card .src svg{flex:0 0 14px;width:14px;height:14px;color:var(--action)}
+.card .r{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.price{font-size:16px;font-weight:700;white-space:nowrap}
+.price small{font-weight:500;font-size:12px;color:var(--muted-g)}
+.demo{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;background:var(--paper-2);color:var(--ink)}
+html[lang="mr"] .demo{letter-spacing:0;font-size:12px;text-transform:none}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 8px;color:#fff;background:var(--fresh);width:max-content}
+.badge.d2{background:var(--day2)}
+.badge::before{content:"";width:7px;height:7px;border-radius:50%;background:#fff}
+
+/* detail */
+.back{border:0;background:transparent;display:flex;align-items:center;gap:6px;height:40px;padding:0;margin-bottom:8px;font-size:15px;font-weight:600;color:var(--muted-g)}
+.hero{background:var(--paper);display:flex;align-items:center;justify-content:center;height:210px;position:relative}
+.hero svg.big{width:230px;height:190px}
+.hero .badge{position:absolute;top:12px;left:12px}
+.dname{margin:16px 0 2px;font-size:44px;line-height:.95}
+html[lang="mr"] .dname{font-size:38px;line-height:1.15}
+.dsub{font-size:15px;color:var(--muted-g)}
+.dprice{display:flex;align-items:center;gap:10px;margin-top:10px}
+.dprice .price{font-size:22px}
+.story{margin-top:22px;background:var(--raised);padding:16px}
+.story h3{margin:0 0 4px;font-size:22px}
+html[lang="mr"] .story h3{font-size:20px}
+.story .note{font-size:13px;color:var(--muted-g);margin-bottom:12px}
+.tl{list-style:none;margin:0;padding:0;position:relative}
+.tl li{position:relative;padding:0 0 16px 30px}
+.tl li:last-child{padding-bottom:0}
+.tl li::before{content:"";position:absolute;left:6px;top:8px;width:12px;height:12px;border-radius:50%;background:var(--paper)}
+.tl li.done::before{background:var(--fresh)}
+.tl li.soon::before{background:transparent;border:2px solid var(--paper)}
+.tl li::after{content:"";position:absolute;left:11px;top:22px;bottom:-6px;width:2px;background:var(--raised-press)}
+.tl li:last-child::after{display:none}
+.tl b{display:block;font-size:15px}
+.tl span{display:block;font-size:13px;color:var(--muted-g);margin-top:1px}
+.tl time{float:right;font-size:13px;font-weight:600;color:var(--paper)}
+.fresh-meter{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+.fresh-meter .bar{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.fresh-meter .bar i{height:8px;background:var(--raised-press)}
+.fresh-meter .bar i.on{background:var(--fresh)}
+.fresh-meter.d2 .bar i.on{background:var(--day2)}
+.fresh-meter span{font-size:13px;color:var(--body-g)}
+.opt{margin-top:20px}
+.opt h4{margin:0 0 8px;font-size:14px;font-weight:600;color:var(--muted-g)}
+.opt .chips{margin-bottom:0;flex-wrap:wrap;overflow:visible}
+
+/* why */
+.usps{display:flex;flex-direction:column;gap:10px}
+.usp{display:flex;gap:14px;background:var(--raised);padding:16px}
+.usp .ic{flex:0 0 48px;height:48px;display:flex;align-items:center;justify-content:center;background:var(--paper);color:var(--ink)}
+.usp b{display:block;font-size:17px}
+.usp span{display:block;margin-top:3px;font-size:14px;line-height:1.45;color:var(--body-g)}
+
+/* later */
+.lgroup{margin-top:26px}
+.lgroup h3{margin:0 0 4px;font-size:24px;line-height:1.05}
+html[lang="mr"] .lgroup h3{font-size:21px;line-height:1.2}
+.lgroup p{margin:0 0 12px;font-size:14px;color:var(--muted-g)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.tile{background:var(--raised);padding:10px 10px 12px;display:flex;flex-direction:column;gap:6px}
+.tile .art{height:92px;background:var(--paper);display:flex;align-items:center;justify-content:center}
+.tile .art svg{width:84px;height:84px}
+.tile b{font-size:15px;line-height:1.2}
+.tile span{font-size:12.5px;color:var(--muted-g);line-height:1.35}
+.later-tag{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--paper);border:1px solid var(--muted-g);padding:1px 6px;width:max-content}
+html[lang="mr"] .later-tag{letter-spacing:0;font-size:12px;text-transform:none}
+.fine{margin-top:28px;font-size:12.5px;line-height:1.5;color:var(--muted-g)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <img src="/icons/wordmark-dark.svg" alt="Blio" width="68" height="34">
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="mr" aria-pressed="false" class="mr">मराठी</button>
+    </div>
+  </header>
+  <div class="banner" id="banner"></div>
+  <main class="main" id="main"></main>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- settings ----------
+  var WHATSAPP = '918856888766';          // Blio WhatsApp, as printed on bills
+  var INSTAGRAM = 'https://www.instagram.com/blio.in';
+
+  // ---------- words ----------
+  var T = {
+    en: {
+      banner: 'PREVIEW · Demo prices · Coming soon',
+      tHome: 'Home', tCatch: 'Fresh catch', tWhy: 'Why Blio', tLater: 'Coming later',
+      kick: 'Coming soon to Kolhapur',
+      h1: 'Fresh from the harbour',
+      intro: 'Fish, prawns and crab from the Konkan harbours, cleaned in Kolhapur, and at your door the same evening.',
+      f1s: 'Order by', f1: '3 PM', f2s: 'At your door', f2: '5 to 8 PM', f3s: 'Cleaned', f3: 'The way you want', f4s: 'Pay', f4: 'UPI or cash',
+      seeCatch: 'See the catch',
+      jTitle: 'Harbour to door',
+      jLead: 'Every catch on Blio tells you where it came from and when it landed.',
+      j1: 'Landed at the harbour', j1s: 'Early morning at Malvan, Devgad, Vengurla, Ratnagiri or Goa',
+      j2: 'Reaches Kolhapur', j2s: 'Kept on ice all the way',
+      j3: 'Cleaned and cut for you', j3s: 'In our own cleaning room, the way you choose',
+      j4: 'At your door', j4s: 'Packed with ice in an insulated box, 5 to 8 PM',
+      endH: 'Blio is coming soon',
+      endP: 'We delivered to homes in your area during our trial run. We are getting ready to open for everyone.',
+      wa: 'Say hi on WhatsApp', ig: 'Follow us on Instagram',
+      waMsg: 'Hi Blio, I saw your preview. Please tell me when you start.',
+      catchLead: 'Every fish shows where it landed and how fresh it is. Tap one to see its journey.',
+      all: 'All', gFish: 'Fish', gPrawns: 'Prawns', gCrab: 'Crab',
+      landedAt: 'Landed at {h}', landedToday: 'Landed today, {t}', landedYday: 'Landed yesterday, {t}',
+      fresh: 'Fresh today', day2: 'Day 2 of 2',
+      demo: 'Demo price', perKg: '/kg',
+      back: 'Back',
+      story: 'Catch story', storyNote: 'Example times. On the real app these come from each day\'s catch.',
+      s1: 'Landed at {h} harbour', s1y: 'Landed at {h} harbour, yesterday',
+      s1s: 'Straight off the boat', s2: 'Reached Kolhapur', s2s: 'On ice',
+      s3: 'Cleaned and cut for your order', s3s: 'After you order, in our cleaning room',
+      s4: 'At your door', s4s: 'Packed with ice',
+      meter: 'Each catch is sold for 2 days only. After that, it is not sold.',
+      meterNow1: 'Day 1: landed today', meterNow2: 'Day 2: last day for this catch',
+      cut: 'Cut', pack: 'Pack',
+      orderSoon: 'Ordering opens soon',
+      whyLead: 'What makes Blio different from the market.',
+      u1: 'Know your fish', u1s: 'See the harbour and the time it landed for every catch.',
+      u2: 'Sold within 2 days', u2s: 'Each catch is sold for two days only, then it is gone. No old stock.',
+      u3: 'Cleaned your way', u3s: 'Whole, curry cut, steaks or fillet. Cleaned before it reaches you, no mess at home.',
+      u4: 'Clean and hygienic', u4s: 'Our own cleaning room, steel tables and gloves. Food-grade bags with ice in an insulated box.',
+      u8: 'Food safety first', u8s: 'Our FSSAI licence is in process and will be in place before we open.',
+      u5: 'Fair, fixed price', u5s: 'One clear price per kg of whole fish, weighed before cleaning. No bargaining, no surprises.',
+      u6: 'Fair to fishermen', u6s: 'We pay fishermen a steady price, on time.',
+      u7: 'Order by 3 PM, eat tonight', u7s: 'Evening delivery between 5 and 8 PM, right to your door.',
+      laterLead: 'During our trial run, customers asked for more than fish. These are planned next.',
+      lVeg: 'Vegetables', lVegP: 'Fresh everyday vegetables, delivered with your fish.',
+      lSp: 'Spices and basics', lSpP: 'Masalas and basics for a fish curry at home.',
+      lRf: 'Ready-to-cook fish', lRfP: 'Cleaned, cut and marinated. Just cook.',
+      lRc: 'Ready-to-cook chicken', lRcP: 'Marinated chicken in favourite flavours.',
+      later: 'Coming later',
+      fine: 'This is a preview to show what Blio will be. Prices, times and items are examples only. Nothing can be ordered here and no details are collected.'
+    },
+    mr: {
+      banner: 'प्रिव्ह्यू · किंमती उदाहरणासाठी · लवकरच सुरू',
+      tHome: 'मुख्य', tCatch: 'ताजे मासे', tWhy: 'Blio का?', tLater: 'पुढे येणार',
+      kick: 'लवकरच कोल्हापुरात',
+      h1: 'बंदरावरून थेट ताजे',
+      intro: 'कोकणातील बंदरांवरून आलेले मासे, कोळंबी आणि खेकडे, कोल्हापुरात स्वच्छ करून, त्याच दिवशी संध्याकाळी तुमच्या दारात.',
+      f1s: 'ऑर्डर करा', f1: 'दुपारी ३ पर्यंत', f2s: 'तुमच्या दारात', f2: 'संध्या. ५ ते ८', f3s: 'साफ करून', f3: 'तुम्हाला हवे तसे', f4s: 'पेमेंट', f4: 'UPI किंवा रोख',
+      seeCatch: 'मासे पहा',
+      jTitle: 'बंदरापासून दारापर्यंत',
+      jLead: 'Blio वरील प्रत्येक मासा कुठून आला आणि बंदरावर कधी उतरवला, हे तुम्हाला दिसते.',
+      j1: 'बंदरावर उतरवले', j1s: 'पहाटे मालवण, देवगड, वेंगुर्ला, रत्नागिरी किंवा गोवा येथे',
+      j2: 'कोल्हापुरात पोहोचतात', j2s: 'संपूर्ण प्रवासात बर्फात ठेवलेले',
+      j3: 'तुमच्यासाठी साफ करून कापले', j3s: 'आमच्या स्वतःच्या क्लिनिंग रूममध्ये, तुम्ही निवडाल तसे',
+      j4: 'तुमच्या दारात', j4s: 'बर्फासह इन्सुलेटेड बॉक्समध्ये, संध्या. ५ ते ८',
+      endH: 'Blio लवकरच सुरू होत आहे',
+      endP: 'ट्रायल रनमध्ये आम्ही तुमच्या भागातील घरांमध्ये डिलिव्हरी केली होती. आता सर्वांसाठी सुरू करण्याची तयारी करत आहोत.',
+      wa: 'WhatsApp वर संपर्क करा', ig: 'Instagram वर फॉलो करा',
+      waMsg: 'नमस्कार Blio, मी तुमचा प्रिव्ह्यू पाहिला. तुम्ही सुरू केल्यावर मला कळवा.',
+      catchLead: 'प्रत्येक मासा कोणत्या बंदरावर उतरवला आणि किती ताजा आहे ते दिसते. प्रवास पाहण्यासाठी माशावर टॅप करा.',
+      all: 'सर्व', gFish: 'मासे', gPrawns: 'कोळंबी', gCrab: 'खेकडे',
+      landedAt: '{h}', landedToday: 'आज, {t}', landedYday: 'काल, {t}',
+      fresh: 'आजचे ताजे', day2: 'दुसरा व शेवटचा दिवस',
+      demo: 'उदाहरण किंमत', perKg: '/किलो',
+      back: 'मागे',
+      story: 'माशाचा प्रवास', storyNote: 'वेळा उदाहरणासाठी. खऱ्या ॲपमध्ये त्या रोजच्या मालानुसार दिसतील.',
+      s1: '{h} बंदरावर उतरवले', s1y: '{h} बंदरावर उतरवले, काल',
+      s1s: 'थेट बोटीतून', s2: 'कोल्हापुरात पोहोचले', s2s: 'बर्फात',
+      s3: 'तुमच्या ऑर्डरनुसार साफ करून कापले', s3s: 'ऑर्डरनंतर, आमच्या क्लिनिंग रूममध्ये',
+      s4: 'तुमच्या दारात', s4s: 'बर्फासह पॅक करून',
+      meter: 'प्रत्येक माल फक्त २ दिवस विकला जातो. त्यानंतर विकला जात नाही.',
+      meterNow1: 'पहिला दिवस: आज बंदरावर उतरवले', meterNow2: 'दुसरा दिवस: या मालाचा शेवटचा दिवस',
+      cut: 'कट', pack: 'वजन',
+      orderSoon: 'ऑर्डर लवकरच सुरू',
+      whyLead: 'बाजारापेक्षा Blio वेगळे का आहे.',
+      u1: 'मासा कुठून आला ते जाणा', u1s: 'प्रत्येक मालाचे बंदर आणि तो उतरवल्याची वेळ पहा.',
+      u2: '२ दिवसांत विक्री', u2s: 'प्रत्येक माल फक्त दोन दिवस विकला जातो. जुना माल नाही.',
+      u3: 'तुम्हाला हवे तसे साफ', u3s: 'अख्खा, करी कट, तुकडे किंवा फिले. घरी पोहोचण्याआधीच साफ, घरी कचरा नाही.',
+      u4: 'स्वच्छ आणि सुरक्षित', u4s: 'आमची स्वतःची क्लिनिंग रूम, स्टीलची टेबले आणि ग्लोव्ह्ज. फूड-ग्रेड पिशव्या, बर्फासह इन्सुलेटेड बॉक्स.',
+      u8: 'अन्न सुरक्षेला प्राधान्य', u8s: 'आमचा FSSAI परवाना प्रक्रियेत आहे. सेवा सुरू होण्याआधी तो मिळालेला असेल.',
+      u5: 'योग्य, ठरलेली किंमत', u5s: 'अख्ख्या माशाची प्रति किलो एकच स्पष्ट किंमत, साफ करण्याआधी वजन. घासाघीस नाही.',
+      u6: 'मच्छीमारांना योग्य दाम', u6s: 'आम्ही मच्छीमारांना स्थिर दाम, वेळेवर देतो.',
+      u7: 'दुपारी ३ पर्यंत ऑर्डर, रात्री जेवणात', u7s: 'संध्याकाळी ५ ते ८ दरम्यान थेट तुमच्या दारात.',
+      laterLead: 'ट्रायल रनमध्ये ग्राहकांनी माशांसोबत आणखी गोष्टी मागितल्या. पुढे या आणण्याचा विचार आहे.',
+      lVeg: 'भाजीपाला', lVegP: 'रोजच्या ताज्या भाज्या, माशांसोबतच डिलिव्हरी.',
+      lSp: 'मसाले व किराणा', lSpP: 'घरी माशाच्या कालवणासाठी मसाले आणि इतर.',
+      lRf: 'रेडी-टू-कुक मासे', lRfP: 'साफ करून, कापून, मसाला लावून. फक्त शिजवा.',
+      lRc: 'रेडी-टू-कुक चिकन', lRcP: 'आवडत्या चवींमध्ये मसाला लावलेले चिकन.',
+      later: 'पुढे येणार',
+      fine: 'Blio कसे असेल हे दाखवण्यासाठी हा प्रिव्ह्यू आहे. किंमती, वेळा आणि वस्तू फक्त उदाहरणासाठी आहेत. येथे ऑर्डर करता येत नाही आणि कोणतीही माहिती घेतली जात नाही.'
+    }
+  };
+
+  var HARBOUR = { Malvan: 'मालवण', Devgad: 'देवगड', Vengurla: 'वेंगुर्ला', Ratnagiri: 'रत्नागिरी', Goa: 'गोवा' };
+  var CUT = { 'Whole': 'अख्खा', 'Curry cut': 'करी कट', 'Steaks': 'तुकडे', 'Cleaned': 'साफ केलेले', 'Fillet': 'फिले', 'Cleaned and deveined': 'साफ व शिर काढलेली' };
+  var PACK = { '500 g': '५०० ग्रॅम', '1 kg': '१ किलो' };
+
+  // Demo catch. Prices are examples; times follow the usual day (harbour early morning, Kolhapur about 9 AM).
+  var CATCH = [
+    { id: 'surmai', g: 'gFish', name: 'Surmai', mr: 'सुरमई', en: 'King fish', price: 1200, h: 'Devgad', t: '6:10 AM', k: '9:20 AM', day: 1, cuts: ['Whole', 'Curry cut', 'Steaks'], art: 'long', c: '#7E95A3' },
+    { id: 'paplet', g: 'gFish', name: 'Paplet', mr: 'पापलेट', en: 'Silver pomfret', price: 1400, h: 'Malvan', t: '5:45 AM', k: '9:05 AM', day: 1, cuts: ['Whole', 'Curry cut', 'Cleaned'], art: 'round', c: '#B9C2C6' },
+    { id: 'bangda', g: 'gFish', name: 'Bangda', mr: 'बांगडा', en: 'Mackerel', price: 320, h: 'Malvan', t: '5:45 AM', k: '9:05 AM', day: 1, cuts: ['Whole', 'Cleaned'], art: 'mack', c: '#3D6B7A' },
+    { id: 'rawas', g: 'gFish', name: 'Rawas', mr: 'रावस', en: 'Indian salmon', price: 1000, h: 'Ratnagiri', t: '6:30 AM', k: '9:40 AM', day: 2, cuts: ['Whole', 'Curry cut', 'Fillet'], art: 'long', c: '#A79A86' },
+    { id: 'tarli', g: 'gFish', name: 'Tarli', mr: 'तारली', en: 'Sardine', price: 240, h: 'Vengurla', t: '6:00 AM', k: '9:15 AM', day: 1, cuts: ['Whole', 'Cleaned'], art: 'small', c: '#6F8C99' },
+    { id: 'kolambi', g: 'gPrawns', name: 'Kolambi', mr: 'कोळंबी', en: 'Medium prawns', price: 600, h: 'Goa', t: '5:30 AM', k: '9:30 AM', day: 1, cuts: ['Whole', 'Cleaned and deveined'], art: 'prawn', c: '#E0896B' },
+    { id: 'khekda', g: 'gCrab', name: 'Khekda', mr: 'खेकडा', en: 'Mud crab', price: 800, h: 'Malvan', t: '5:45 AM', k: '9:05 AM', day: 2, cuts: ['Whole', 'Cleaned'], art: 'crab', c: '#5E5A4A' }
+  ];
+
+  var LATER = [
+    { k: 'lVeg', items: [
+      ['Tomato', 'टोमॅटो', 'veg', '#D64B3A'], ['Onion', 'कांदा', 'onion', '#B0556A'], ['Potato', 'बटाटा', 'potato', '#C9A26B'],
+      ['Coriander', 'कोथिंबीर', 'leaf', '#4F9A4E'], ['Methi', 'मेथी', 'leaf', '#3C7F3E'], ['Green chilli', 'हिरवी मिरची', 'chilli', '#3F9B3A'] ] },
+    { k: 'lSp', items: [
+      ['Kolhapuri masala', 'कोल्हापुरी मसाला', 'spice', '#B5341F'], ['Malvani masala', 'मालवणी मसाला', 'spice', '#9C3B1A'],
+      ['Kanda-lasun masala', 'कांदा-लसूण मसाला', 'spice', '#8E2E21'], ['Kokum', 'कोकम', 'kokum', '#6E1F3A'],
+      ['Fresh coconut', 'ओला नारळ', 'coconut', '#7A5434'], ['Rava for fry', 'तळण्यासाठी रवा', 'spice', '#D9C38E'] ] },
+    { k: 'lRf', items: [
+      ['Surmai cafreal', 'सुरमई कॅफ्रियल', 'mfish', '#3E8E3A', 'Goan green masala', 'गोवन हिरवा मसाला'],
+      ['Bangda recheado', 'बांगडा रेशाद', 'mfish', '#B8331E', 'Goan red masala', 'गोवन लाल मसाला'],
+      ['Paplet Malvani', 'पापलेट मालवणी', 'mfish', '#A6461C', 'Malvani masala', 'मालवणी मसाला'],
+      ['Prawns Kolhapuri', 'कोळंबी कोल्हापुरी', 'mprawn', '#9E2A1A', 'Kolhapuri spice', 'कोल्हापुरी तिखट'],
+      ['Rava-fry surmai', 'रवा फ्राय सुरमई', 'mfish', '#D9B26A', 'Semolina coated, ready to fry', 'रवा लावलेली, तळायला तयार'],
+      ['Tandoori pomfret', 'तंदुरी पापलेट', 'mfish', '#D2552E', 'Tandoori marinade', 'तंदुरी मसाला'],
+      ['Lemon-garlic prawns', 'लेमन-गार्लिक कोळंबी', 'mprawn', '#D9C24A', 'Mild, for kids too', 'सौम्य, मुलांसाठीही'] ] },
+    { k: 'lRc', items: [
+      ['Chicken cafreal', 'चिकन कॅफ्रियल', 'chicken', '#3E8E3A', 'Goan green masala', 'गोवन हिरवा मसाला'],
+      ['Kolhapuri chicken', 'कोल्हापुरी चिकन', 'chicken', '#A3271A', 'Kolhapuri spice', 'कोल्हापुरी तिखट'],
+      ['Tandoori chicken', 'तंदुरी चिकन', 'chicken', '#D2552E', 'Tandoori marinade', 'तंदुरी मसाला'],
+      ['Chicken Malvani sukka', 'चिकन मालवणी सुक्का', 'chicken', '#7E3A1A', 'Dry Malvani masala', 'सुका मालवणी मसाला'] ] }
+  ];
+
+  // ---------- drawings (our own simple illustrations) ----------
+  var INK = '#12272C';
+  function fishSVG(kind, c, cls) {
+    var a = cls ? ' class="' + cls + '"' : '';
+    var eye = function (x, y) { return '<circle cx="' + x + '" cy="' + y + '" r="4.5" fill="#fff"/><circle cx="' + x + '" cy="' + y + '" r="2.2" fill="' + INK + '"/>'; };
+    if (kind === 'round') return '<svg' + a + ' viewBox="0 0 120 100" aria-hidden="true"><path d="M92 50 L114 30 L110 50 L114 70 Z" fill="' + c + '"/><ellipse cx="56" cy="50" rx="40" ry="34" fill="' + c + '"/><path d="M40 20 Q60 10 76 22 M40 80 Q60 90 76 78" stroke="' + c + '" stroke-width="6" fill="none"/><ellipse cx="56" cy="50" rx="40" ry="34" fill="#fff" opacity=".18"/>' + eye(30, 44) + '<path d="M18 54 q4 3 8 0" stroke="' + INK + '" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+    if (kind === 'small') return '<svg' + a + ' viewBox="0 0 120 100" aria-hidden="true"><g transform="translate(0,-14)"><path d="M86 50 L104 40 L100 50 L104 60 Z" fill="' + c + '"/><path d="M16 50 Q40 34 88 50 Q40 66 16 50 Z" fill="' + c + '"/>' + eye(28, 48) + '</g><g transform="translate(8,16)"><path d="M86 50 L104 40 L100 50 L104 60 Z" fill="' + c + '"/><path d="M16 50 Q40 34 88 50 Q40 66 16 50 Z" fill="' + c + '"/><path d="M16 50 Q40 34 88 50" stroke="#fff" stroke-width="2" fill="none" opacity=".5"/>' + eye(28, 48) + '</g></svg>';
+    if (kind === 'mack') return '<svg' + a + ' viewBox="0 0 120 100" aria-hidden="true"><path d="M94 50 L114 34 L108 50 L114 66 Z" fill="' + c + '"/><path d="M10 50 Q40 22 96 50 Q40 76 10 50 Z" fill="#C9D3D6"/><path d="M10 50 Q40 22 96 50 Q60 44 10 50 Z" fill="' + c + '"/><path d="M40 36 l6 8 M52 34 l6 9 M64 36 l6 9 M76 40 l5 7" stroke="' + INK + '" stroke-width="2.4" stroke-linecap="round"/>' + eye(26, 47) + '</svg>';
+    if (kind === 'prawn') return '<svg' + a + ' viewBox="0 0 120 100" aria-hidden="true"><path d="M30 30 Q14 52 30 74 Q50 92 76 80" stroke="' + c + '" stroke-width="20" fill="none" stroke-linecap="round"/><path d="M28 40 h14 M26 54 h14 M32 68 h12 M46 78 l6 -10" stroke="#fff" stroke-width="2" opacity=".55"/><path d="M76 80 L96 70 L92 84 L100 92 Z" fill="' + c + '"/><path d="M34 26 Q60 6 98 14 M34 28 Q62 18 100 30" stroke="' + c + '" stroke-width="2" fill="none"/><circle cx="40" cy="28" r="3.5" fill="' + INK + '"/></svg>';
+    if (kind === 'crab') return '<svg' + a + ' viewBox="0 0 120 100" aria-hidden="true"><path d="M30 56 L10 70 M34 64 L18 82 M90 56 L110 70 M86 64 L102 82 M40 66 L32 88 M80 66 L88 88" stroke="' + c + '" stroke-width="6" stroke-linecap="round"/><path d="M34 44 L18 26 M86 44 L102 26" stroke="' + c + '" stroke-width="7" stroke-linecap="round"/><path d="M8 26 Q14 10 26 18 L20 28 Z M112 26 Q106 10 94 18 L100 28 Z" fill="' + c + '"/><ellipse cx="60" cy="54" rx="34" ry="22" fill="' + c + '"/><ellipse cx="60" cy="50" rx="24" ry="12" fill="#fff" opacity=".12"/><path d="M50 34 v-8 M70 34 v-8" stroke="' + c + '" stroke-width="3"/><circle cx="50" cy="25" r="4" fill="' + INK + '"/><circle cx="70" cy="25" r="4" fill="' + INK + '"/></svg>';
+    // long (surmai, rawas)
+    return '<svg' + a + ' viewBox="0 0 120 100" aria-hidden="true"><path d="M96 50 L116 30 L110 50 L116 70 Z" fill="' + c + '"/><path d="M6 52 Q36 26 98 50 Q36 74 6 52 Z" fill="' + c + '"/><path d="M6 52 Q36 26 98 50 Q50 46 6 52 Z" fill="#fff" opacity=".2"/><path d="M50 32 L62 22 L66 36 Z M54 70 L64 80 L68 66 Z" fill="' + c + '"/>' + eye(20, 48) + '<path d="M10 56 q5 2 9 -1" stroke="' + INK + '" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
+  }
+  function itemSVG(kind, c) {
+    var bowl = function (inner) { return '<svg viewBox="0 0 100 100" aria-hidden="true"><ellipse cx="50" cy="56" rx="38" ry="10" fill="#E4DCC6"/>' + inner + '<path d="M12 56 Q14 86 50 88 Q86 86 88 56 Z" fill="#12404A"/><path d="M22 66 Q50 74 78 66" stroke="#fff" stroke-width="2" opacity=".25" fill="none"/></svg>'; };
+    switch (kind) {
+      case 'veg': return '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="56" r="30" fill="' + c + '"/><circle cx="40" cy="46" r="7" fill="#fff" opacity=".25"/><path d="M50 28 l-10 -6 M50 28 l10 -6 M50 28 l0 -10 M50 28 l-14 2 M50 28 l14 2" stroke="#3E7F35" stroke-width="5" stroke-linecap="round"/></svg>';
+      case 'onion': return '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 18 Q46 30 50 32 Q54 30 50 18" fill="#7EA35A"/><path d="M50 30 Q16 50 30 76 Q50 92 70 76 Q84 50 50 30 Z" fill="' + c + '"/><path d="M50 34 Q34 54 42 82 M50 34 Q66 54 58 82" stroke="#fff" stroke-width="2" opacity=".35" fill="none"/><path d="M44 86 l-4 6 M50 88 v6 M56 86 l4 6" stroke="#C9B48A" stroke-width="2" stroke-linecap="round"/></svg>';
+      case 'potato': return '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M20 60 Q18 34 46 32 Q80 28 84 54 Q86 78 54 80 Q22 82 20 60 Z" fill="' + c + '"/><circle cx="40" cy="50" r="2.5" fill="#8C6A3E"/><circle cx="62" cy="44" r="2.5" fill="#8C6A3E"/><circle cx="66" cy="64" r="2.5" fill="#8C6A3E"/><circle cx="44" cy="68" r="2.5" fill="#8C6A3E"/></svg>';
+      case 'leaf': return '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 90 V44" stroke="#5C8A3A" stroke-width="4"/><path d="M50 50 Q22 46 22 24 Q44 22 50 50 Z M50 50 Q78 46 78 24 Q56 22 50 50 Z M50 64 Q24 66 18 46 Q40 40 50 64 Z M50 64 Q76 66 82 46 Q60 40 50 64 Z" fill="' + c + '"/></svg>';
+      case 'chilli': return '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="M28 30 Q40 20 44 30 Q54 70 86 82 Q60 92 40 70 Q24 50 28 30 Z" fill="' + c + '"/><path d="M30 30 Q26 20 34 14" stroke="#5C7A2A" stroke-width="5" fill="none" stroke-linecap="round"/><path d="M38 38 Q46 62 66 76" stroke="#fff" stroke-width="2" opacity=".35" fill="none"/></svg>';
+      case 'kokum': return '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="40" cy="56" r="22" fill="' + c + '"/><circle cx="64" cy="52" r="20" fill="' + c + '" opacity=".85"/><path d="M40 34 q0 -10 8 -14 M64 32 q2 -8 10 -10" stroke="#5C7A2A" stroke-width="4" fill="none" stroke-linecap="round"/><circle cx="34" cy="50" r="5" fill="#fff" opacity=".2"/></svg>';
+      case 'coconut': return '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="54" r="32" fill="' + c + '"/><circle cx="50" cy="54" r="24" fill="#F4EEDF"/><circle cx="50" cy="54" r="18" fill="#FFFFFF"/><path d="M26 34 q6 -6 10 0 M64 30 q6 -6 10 2" stroke="#5A3C22" stroke-width="2" fill="none"/></svg>';
+      case 'spice': return bowl('<path d="M18 56 Q50 30 82 56 Z" fill="' + c + '"/><circle cx="40" cy="48" r="2" fill="#fff" opacity=".4"/><circle cx="56" cy="44" r="2" fill="#fff" opacity=".4"/><circle cx="64" cy="50" r="2" fill="#fff" opacity=".4"/>');
+      case 'mfish': return '<svg viewBox="0 0 100 100" aria-hidden="true"><ellipse cx="50" cy="62" rx="44" ry="20" fill="#E4DCC6"/><path d="M78 56 L94 44 L90 56 L94 68 Z" fill="' + c + '"/><path d="M10 56 Q36 30 80 56 Q36 80 10 56 Z" fill="' + c + '"/><path d="M28 48 l8 14 M42 44 l8 16 M56 46 l8 14" stroke="#fff" stroke-width="2.5" opacity=".45" stroke-linecap="round"/><circle cx="20" cy="53" r="3" fill="#fff"/><path d="M30 76 q4 -4 8 0 M60 78 q4 -4 8 0" stroke="#3E7F35" stroke-width="3" fill="none" stroke-linecap="round"/></svg>';
+      case 'mprawn': return bowl('<path d="M30 52 Q26 36 40 34 Q50 34 48 46" stroke="' + c + '" stroke-width="10" fill="none" stroke-linecap="round"/><path d="M54 52 Q50 36 64 34 Q74 34 72 46" stroke="' + c + '" stroke-width="10" fill="none" stroke-linecap="round"/><path d="M42 54 Q40 42 52 40 Q60 40 60 50" stroke="' + c + '" stroke-width="10" fill="none" stroke-linecap="round" opacity=".85"/>');
+      case 'chicken': return '<svg viewBox="0 0 100 100" aria-hidden="true"><ellipse cx="50" cy="66" rx="44" ry="18" fill="#E4DCC6"/><path d="M60 40 Q80 28 82 48 Q84 66 62 64 L44 76 Q38 82 32 78 Q26 80 24 74 Q18 70 24 66 Q28 60 34 64 L50 54 Q44 46 60 40 Z" fill="' + c + '"/><path d="M62 46 Q72 42 74 50" stroke="#fff" stroke-width="2.5" opacity=".4" fill="none" stroke-linecap="round"/><path d="M28 70 Q24 74 28 76" stroke="#F4EEDF" stroke-width="5" stroke-linecap="round"/><path d="M14 84 q4 -4 8 0 M78 84 q4 -4 8 0" stroke="#3E7F35" stroke-width="3" fill="none" stroke-linecap="round"/></svg>';
+    }
+    return '';
+  }
+  var ICON = {
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 11 12 4l9 7v9h-6v-6H9v6H3z"/></svg>',
+    fish: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M2 12c3-5 10-6 15-1l5-4v10l-5-4c-5 5-12 4-15-1z"/><circle cx="7" cy="11" r="1" fill="currentColor"/></svg>',
+    star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>',
+    basket: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M3 9h18l-2 11H5z"/><path d="M8 9l4-6 4 6M9 13v4M15 13v4"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/></svg>',
+    back: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+    anchor: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ECE6D6" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2"/><path d="M12 7v14M5 13a7 7 0 0 0 14 0M8 11h8"/></svg>',
+    truck: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ECE6D6" stroke-width="2" stroke-linejoin="round"><path d="M2 6h11v10H2zM13 10h5l3 3v3h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
+    knife: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ECE6D6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M3 21l9-9M12 12l8-8c1 3 0 6-3 8l-2 1z"/></svg>',
+    door: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ECE6D6" stroke-width="2" stroke-linejoin="round"><path d="M5 21V3h11v18M3 21h18"/><circle cx="13" cy="12" r="1" fill="#ECE6D6"/></svg>',
+    eye: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    clock: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    cut: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg>',
+    shield: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+    cert: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>',
+    scale: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3v18M7 21h10M5 7h14M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0z"/></svg>',
+    hands: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M3 14l4-4 3 2 3-3 4 1 4 4-6 6H9z"/><path d="M7 10l3-3 3 2"/></svg>',
+    moon: '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20 14A8 8 0 1 1 10 4a6 6 0 0 0 10 10z"/></svg>',
+    wa: '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.5-3.9-4.7-4.1-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.1 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l2 1c.3.1.5.2.5.3.1.1.1.6-.1 1.2z"/></svg>'
+  };
+
+  // ---------- state ----------
+  var S = { lang: 'en', view: 'home', group: 'all', item: null, cut: {}, pack: {} };
+  try { var saved = localStorage.getItem('blio-preview-lang'); if (saved === 'mr' || saved === 'en') S.lang = saved; } catch (e) {}
+
+  var main = document.getElementById('main');
+  function t(k, v) { var s = (T[S.lang][k] != null ? T[S.lang][k] : T.en[k]) || ''; if (v) Object.keys(v).forEach(function (x) { s = s.replace('{' + x + '}', v[x]); }); return s; }
+  function mr() { return S.lang === 'mr'; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function digits(s) { return mr() ? String(s).replace(/[0-9]/g, function (d) { return '०१२३४५६७८९'[d]; }) : String(s); }
+  function hName(h) { return mr() ? HARBOUR[h] : h; }
+  function timeTxt(x) { if (!mr()) return x; var p = x.split(' '); return (p[1] === 'AM' ? 'सकाळी ' : 'दुपारी ') + digits(p[0]); }
+  function rupees(n) { return '₹' + digits(n.toLocaleString('en-IN')); }
+  function fishName(f) { return mr() ? f.mr : f.name; }
+  function fishSub(f) { return mr() ? f.name + ' · ' + f.en : f.mr + ' · ' + f.en; }
+  function badge(f) { return '<span class="badge' + (f.day === 2 ? ' d2' : '') + '">' + t(f.day === 2 ? 'day2' : 'fresh') + '</span>'; }
+
+  // ---------- views ----------
+  function viewHome() {
+    return '<div class="wrap view">' +
+      '<section class="ticket"><div class="in">' +
+        '<span class="kick">' + t('kick') + '</span>' +
+        '<h1 class="anton">' + t('h1') + '</h1>' +
+        '<p>' + t('intro') + '</p>' +
+      '</div><div class="perf"></div>' +
+      '<div class="facts">' +
+        '<span><small>' + t('f1s') + '</small><strong>' + t('f1') + '</strong></span>' +
+        '<span><small>' + t('f2s') + '</small><strong>' + t('f2') + '</strong></span>' +
+        '<span><small>' + t('f3s') + '</small><strong>' + t('f3') + '</strong></span>' +
+        '<span><small>' + t('f4s') + '</small><strong>' + t('f4') + '</strong></span>' +
+      '</div>' +
+      '<div style="padding:0 20px 20px"><button class="btn" data-go="catch">' + t('seeCatch') + '</button></div></section>' +
+      '<h2 class="sec anton">' + t('jTitle') + '</h2>' +
+      '<p class="lead">' + t('jLead') + '</p>' +
+      '<div class="journey">' +
+        jrow(ICON.anchor, 'j1', 'j1s') + jrow(ICON.truck, 'j2', 'j2s') + jrow(ICON.knife, 'j3', 'j3s') + jrow(ICON.door, 'j4', 'j4s') +
+      '</div>' + endCard() + '</div>';
+  }
+  function jrow(ic, a, b) { return '<div class="jrow"><span class="ic">' + ic + '</span><div><b>' + t(a) + '</b><span>' + t(b) + '</span></div></div>'; }
+  function endCard() {
+    var waUrl = 'https://wa.me/' + WHATSAPP + '?text=' + encodeURIComponent(t('waMsg'));
+    return '<section class="end"><h3 class="anton">' + t('endH') + '</h3><p>' + t('endP') + '</p>' +
+      '<a class="btn wa" href="' + waUrl + '" target="_blank" rel="noopener">' + ICON.wa + t('wa') + '</a>' +
+      (INSTAGRAM ? '<a class="btn dark" href="' + esc(INSTAGRAM) + '" target="_blank" rel="noopener">' + t('ig') + '</a>' : '') +
+      '</section><p class="fine">' + t('fine') + '</p>';
+  }
+
+  function viewCatch() {
+    var groups = ['all', 'gFish', 'gPrawns', 'gCrab'];
+    var list = CATCH.filter(function (f) { return S.group === 'all' || f.g === S.group; });
+    return '<div class="wrap view">' +
+      '<h2 class="sec anton" style="margin-top:6px">' + t('tCatch') + '</h2>' +
+      '<p class="lead">' + t('catchLead') + '</p>' +
+      '<div class="chips" role="group">' + groups.map(function (g) { return '<button class="chip" data-group="' + g + '" aria-pressed="' + (S.group === g) + '">' + t(g === 'all' ? 'all' : g) + '</button>'; }).join('') + '</div>' +
+      '<div class="cards">' + list.map(function (f) {
+        var when = f.day === 2 ? t('landedYday', { t: timeTxt(f.t) }) : t('landedToday', { t: timeTxt(f.t) });
+        return '<button class="card" data-item="' + f.id + '">' +
+          '<span class="art">' + fishSVG(f.art, f.c) + '</span>' +
+          '<span class="t"><b>' + fishName(f) + '</b><span class="sub">' + fishSub(f) + '</span>' +
+            '<span class="src">' + ICON.pin + esc(hName(f.h)) + ' · ' + when + '</span>' + badge(f) + '</span>' +
+          '<span class="r"><span class="price">' + rupees(f.price) + '<small>' + t('perKg') + '</small></span><span class="demo">' + t('demo') + '</span></span>' +
+        '</button>';
+      }).join('') + '</div></div>';
+  }
+
+  function viewItem() {
+    var f = CATCH.filter(function (x) { return x.id === S.item; })[0];
+    if (!f) { S.view = 'catch'; return viewCatch(); }
+    var cut = S.cut[f.id] || f.cuts[0], pack = S.pack[f.id] || '1 kg';
+    var cutLbl = function (c) { return mr() ? CUT[c] || c : c; };
+    var packLbl = function (p) { return mr() ? PACK[p] : p; };
+    return '<div class="wrap view">' +
+      '<button class="back" data-go="catch">' + ICON.back + t('back') + '</button>' +
+      '<div class="hero">' + badge(f) + fishSVG(f.art, f.c, 'big') + '</div>' +
+      '<h2 class="dname anton">' + fishName(f) + '</h2>' +
+      '<div class="dsub">' + fishSub(f) + '</div>' +
+      '<div class="dprice"><span class="price">' + rupees(f.price) + '<small>' + t('perKg') + '</small></span><span class="demo">' + t('demo') + '</span></div>' +
+      '<section class="story"><h3 class="anton">' + t('story') + '</h3><div class="note">' + t('storyNote') + '</div>' +
+        '<ol class="tl">' +
+          '<li class="done"><time>' + timeTxt(f.t) + '</time><b>' + t(f.day === 2 ? 's1y' : 's1', { h: esc(hName(f.h)) }) + '</b><span>' + t('s1s') + '</span></li>' +
+          '<li class="done"><time>' + timeTxt(f.k) + '</time><b>' + t('s2') + '</b><span>' + t('s2s') + '</span></li>' +
+          '<li class="soon"><b>' + t('s3') + '</b><span>' + t('s3s') + '</span></li>' +
+          '<li class="soon"><time>' + (mr() ? 'संध्या. ' + digits('5–8') : '5–8 PM') + '</time><b>' + t('s4') + '</b><span>' + t('s4s') + '</span></li>' +
+        '</ol>' +
+        '<div class="fresh-meter' + (f.day === 2 ? ' d2' : '') + '"><div class="bar"><i class="on"></i><i class="' + (f.day === 2 ? 'on' : '') + '"></i></div>' +
+          '<span><b>' + t(f.day === 2 ? 'meterNow2' : 'meterNow1') + '.</b> ' + t('meter') + '</span></div>' +
+      '</section>' +
+      '<div class="opt"><h4>' + t('cut') + '</h4><div class="chips">' + f.cuts.map(function (c) { return '<button class="chip" data-cut="' + esc(c) + '" aria-pressed="' + (c === cut) + '">' + esc(cutLbl(c)) + '</button>'; }).join('') + '</div></div>' +
+      '<div class="opt"><h4>' + t('pack') + '</h4><div class="chips">' + ['500 g', '1 kg'].map(function (p) { return '<button class="chip" data-pack="' + p + '" aria-pressed="' + (p === pack) + '">' + packLbl(p) + '</button>'; }).join('') + '</div></div>' +
+      '<div style="margin-top:22px"><button class="btn" disabled>' + t('orderSoon') + '</button></div>' +
+    '</div>';
+  }
+
+  function viewWhy() {
+    var u = [[ICON.eye, 'u1'], [ICON.clock, 'u2'], [ICON.cut, 'u3'], [ICON.shield, 'u4'], [ICON.cert, 'u8'], [ICON.scale, 'u5'], [ICON.hands, 'u6'], [ICON.moon, 'u7']];
+    return '<div class="wrap view"><h2 class="sec anton" style="margin-top:6px">' + t('tWhy') + '</h2><p class="lead">' + t('whyLead') + '</p>' +
+      '<div class="usps">' + u.map(function (x) { return '<div class="usp"><span class="ic">' + x[0] + '</span><div><b>' + t(x[1]) + '</b><span>' + t(x[1] + 's') + '</span></div></div>'; }).join('') + '</div>' +
+      endCard() + '</div>';
+  }
+
+  function viewLater() {
+    return '<div class="wrap view"><h2 class="sec anton" style="margin-top:6px">' + t('tLater') + '</h2><p class="lead">' + t('laterLead') + '</p>' +
+      LATER.map(function (g) {
+        return '<section class="lgroup"><h3 class="anton">' + t(g.k) + '</h3><p>' + t(g.k + 'P') + '</p><div class="grid">' +
+          g.items.map(function (it) {
+            var name = mr() ? it[1] : it[0], sub = it[4] ? (mr() ? it[5] : it[4]) : (mr() ? it[0] : it[1]);
+            return '<div class="tile"><span class="art">' + itemSVG(it[2], it[3]) + '</span><b>' + esc(name) + '</b><span>' + esc(sub) + '</span><span class="later-tag">' + t('later') + '</span></div>';
+          }).join('') + '</div></section>';
+      }).join('') + '<p class="fine">' + t('fine') + '</p></div>';
+  }
+
+  // ---------- render ----------
+  var TABS = [['home', 'tHome', 'home'], ['catch', 'tCatch', 'fish'], ['why', 'tWhy', 'star'], ['later', 'tLater', 'basket']];
+  function render(keepScroll) {
+    document.documentElement.lang = S.lang;
+    document.getElementById('banner').textContent = t('banner');
+    document.querySelectorAll('.lang button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.lang === S.lang)); });
+    var active = S.view === 'item' ? 'catch' : S.view;
+    document.getElementById('tabs').innerHTML = TABS.map(function (x) {
+      return '<button type="button" data-go="' + x[0] + '"' + (x[0] === active ? ' aria-current="page"' : '') + '>' + ICON[x[2]] + '<span>' + t(x[1]) + '</span></button>';
+    }).join('');
+    var top = main.scrollTop;
+    main.innerHTML = S.view === 'catch' ? viewCatch() : S.view === 'item' ? viewItem() : S.view === 'why' ? viewWhy() : S.view === 'later' ? viewLater() : viewHome();
+    main.scrollTop = keepScroll ? top : 0;
+  }
+
+  document.addEventListener('click', function (e) {
+    var el = e.target.closest('button,a'); if (!el) return;
+    if (el.dataset.lang) { S.lang = el.dataset.lang; try { localStorage.setItem('blio-preview-lang', S.lang); } catch (x) {} render(true); return; }
+    if (el.dataset.go) { S.view = el.dataset.go; render(); return; }
+    if (el.dataset.group) { S.group = el.dataset.group; render(true); return; }
+    if (el.dataset.item) { S.item = el.dataset.item; S.view = 'item'; render(); return; }
+    if (el.dataset.cut) { S.cut[S.item] = el.dataset.cut; render(true); return; }
+    if (el.dataset.pack) { S.pack[S.item] = el.dataset.pack; render(true); return; }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
