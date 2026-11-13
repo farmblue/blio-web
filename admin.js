@@ -40,7 +40,8 @@
   var S = {
     auth: store('admin') || null,       // { pw, by }
     tab: 'orders', data: null, loading: false, err: '', note: '',
-    filter: 'open', win: '*', open: '', busy: {}, bills: {}, warn: '', openLot: '', addOpen: false, editFish: ''
+    filter: 'open', win: '*', open: '', busy: {}, bills: {}, warn: '', openLot: '', addOpen: false, editFish: '',
+    pRole: 'Delivery', pOpen: '', pForm: '', pShift: '', pReq: false, pPay: '', pRot: null
   };
 
   // ---------- server ----------
@@ -412,11 +413,115 @@
         '<span class="dsub">A new catch waits this long so you can check it. Use 0 to go live as soon as it is saved.</span>'
         : '<span class="dsub">Off: a new catch stays hidden until you tap Go live on the Stock tab.</span>') +
       '<label class="afl"><span>Harbours, separated by commas</span><input id="s-harbours" class="ainput" data-s="harbours" value="' + esc((st.harbours || []).join(', ')) + '"></label></div>' +
+      '<h2 class="osec">Partner pay rates</h2><div class="aform"><div class="agrid">' +
+        g('pEvening', 'Delivery: per evening (₹)', st.pEvening, 'type="number" inputmode="decimal" min="0"') + g('pDrop', 'Delivery: per delivery (₹)', st.pDrop, 'type="number" inputmode="decimal" min="0"') +
+        g('pFuel', 'Fuel per km (₹)', st.pFuel, 'type="number" inputmode="decimal" min="0" step="0.1"') + g('pSession', 'Cleaning: per session (₹)', st.pSession, 'type="number" inputmode="decimal" min="0"') +
+        g('pFish', 'Cleaning: per kg fish (₹)', st.pFish, 'type="number" inputmode="decimal" min="0"') + g('pPrawn', 'Cleaning: per kg prawns and crab (₹)', st.pPrawn, 'type="number" inputmode="decimal" min="0"') + '</div>' +
+      '<span class="dsub">Used to work out pay when you add an evening or session. Changing a rate affects only new entries.</span></div>' +
       '<button class="btn big press" data-act="saves"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save settings') + '</button>' +
       couponsHtml() +
       '<div class="box">Signed in as <b>' + esc(S.auth.by) + '</b>. The admin password can only be changed in the Google Sheet.' +
       (S.data.sheetUrl ? ' <a href="' + esc(S.data.sheetUrl) + '" target="_blank" rel="noopener">Open the Google Sheet</a>' : '') + '</div>' +
       '<button class="btn dark press" data-act="lock">Lock Blio Admin on this phone</button></div>';
+  }
+
+
+  // ---------- partners: the pool, open requests, shifts and pay ----------
+  function stars(p) { return p.ratings ? '★ ' + p.rating.toFixed(1) + ' (' + p.ratings + ')' : 'new'; }
+  function pdata() { return S.data && S.data.partners; }
+  function pname(id) { var l = (pdata() && pdata().list) || [], x = l.filter(function (p) { return p.id === id; })[0]; return x ? x.name : id; }
+  function shiftLine(e) {
+    var what = e.role === 'Cleaning' ? kg(e.fishKg) + ' fish' + (e.prawnKg ? ', ' + kg(e.prawnKg) + ' prawns and crab' : '') : e.drops + ' drops, ' + (Math.round(e.km * 10) / 10) + ' km';
+    return '<div class="ah1"><span>' + esc(dayLabel(e.date)) + ' · ' + esc(what) + (e.rating ? ' · ★' + e.rating : '') + '</span><span><b class="num">' + rs(e.pay) + '</b> ' +
+      '<span class="ptag' + (e.status === 'Paid' ? ' paid' : '') + '">' + (e.status === 'Due' ? 'Due' : esc(e.status)) + '</span></span></div>' +
+      (e.status === 'Due' ? '<div class="arow"><button class="btn small dark press" data-act="voidshift" data-id="' + esc(e.id) + '">Remove this entry</button></div>' : '');
+  }
+  function partnerForm(p) {
+    var nw = !p.id, v = function (k) { return esc(p[k] || ''); };
+    return '<div class="astock"><div class="ah1"><b>' + (nw ? 'Add a partner' : 'Edit ' + esc(p.name)) + '</b><button class="btn small dark press" data-act="pformclose">Close</button></div>' +
+      '<div class="agrid"><label><span>Name</span><input id="pf-name" class="ainput" value="' + v('name') + '" autocomplete="off"></label>' +
+      '<label><span>Mobile (10 digits)</span><input id="pf-mobile" class="ainput" type="tel" inputmode="numeric" value="' + v('mobile') + '"></label>' +
+      '<label><span>Role</span><select id="pf-role" class="ainput">' + (pdata().roles || []).map(function (r) { return '<option' + (r === (p.role || S.pRole) ? ' selected' : '') + '>' + r + '</option>'; }).join('') + '</select></label>' +
+      '<label><span>Area</span><input id="pf-area" class="ainput" value="' + v('area') + '"></label>' +
+      '<label><span>UPI ID</span><input id="pf-upi" class="ainput" value="' + v('upi') + '" autocapitalize="off"></label>' +
+      '<label><span>' + (nw ? 'PIN (blank = make one)' : 'New PIN (blank = keep)') + '</span><input id="pf-pin" class="ainput" inputmode="numeric" placeholder="4 to 8 digits"></label></div>' +
+      '<label class="afl"><span>Note</span><input id="pf-note" class="ainput" value="' + v('note') + '"></label>' +
+      '<div class="ah1 aswitch"><span>Documents seen (DigiLocker or originals)</span><button class="toggle" role="switch" aria-checked="' + !!p.verifiedOn + '" data-act="pflag" data-v="verifiedOn"><span></span>' + (p.verifiedOn ? 'Yes' : 'No') + '</button></div>' +
+      '<div class="ah1 aswitch"><span>Partner agreed to the terms and privacy notice</span><button class="toggle" role="switch" aria-checked="' + !!p.consentOn + '" data-act="pflag" data-v="consentOn"><span></span>' + (p.consentOn ? 'Yes' : 'No') + '</button></div>' +
+      '<span class="dsub">We keep only the date and who checked. Never store copies or numbers of licences or other IDs here.</span>' +
+      '<button class="btn big press" data-act="psave" data-id="' + esc(p.id || '') + '"' + (S.busy.psave ? ' disabled' : '') + '>' + (S.busy.psave ? 'Saving…' : nw ? 'Add partner' : 'Save') + '</button></div>';
+  }
+  function shiftForm(p) {
+    var cl = p.role === 'Cleaning', rt = pdata().rates || {};
+    return '<div class="astock"><div class="ah1"><b>' + (cl ? 'Add a session' : 'Add an evening') + ' for ' + esc(p.name) + '</b><button class="btn small dark press" data-act="pshiftclose">Close</button></div>' +
+      '<div class="agrid"><label><span>Date</span><input id="sf-date" class="ainput" type="date" value="' + today() + '" max="' + today() + '"></label>' +
+      (cl ? '<label><span>Fish cleaned (kg)</span><input id="sf-fish" class="ainput" type="number" inputmode="decimal" min="0" step="0.1"></label>' +
+            '<label><span>Prawns and crab (kg)</span><input id="sf-prawn" class="ainput" type="number" inputmode="decimal" min="0" step="0.1"></label>'
+          : '<label><span>Deliveries</span><input id="sf-drops" class="ainput" type="number" inputmode="numeric" min="0"></label>' +
+            '<label><span>Route (km, from the map)</span><input id="sf-km" class="ainput" type="number" inputmode="decimal" min="0" step="0.1"></label>') +
+      '<label><span>Rating (optional)</span><select id="sf-rating" class="ainput"><option value="">None</option>' + [5, 4, 3, 2, 1].map(function (n) { return '<option>' + n + '</option>'; }).join('') + '</select></label>' +
+      '<label><span>Pay (₹, blank = by rate)</span><input id="sf-pay" class="ainput" type="number" inputmode="numeric" min="0"></label></div>' +
+      '<span class="dsub">' + (cl ? 'Pay: ' + rs(rt.session) + ' + ' + rs(rt.fish) + '/kg fish + ' + rs(rt.prawn) + '/kg prawns and crab.' : 'Pay: ' + rs(rt.evening) + ' + ' + rs(rt.drop) + ' per delivery + fuel at ₹' + rt.fuel + '/km.') + ' Rates are in Settings.</span>' +
+      '<button class="btn big press" data-act="pshiftsave" data-id="' + esc(p.id) + '"' + (S.busy.shift ? ' disabled' : '') + '>' + (S.busy.shift ? 'Saving…' : 'Save') + '</button></div>';
+  }
+  function partnerCard(p) {
+    var open = S.pOpen === p.id, led = pdata().ledger.filter(function (e) { return e.partner === p.id && e.status !== 'Void'; }).slice(0, 8);
+    var head = '<button class="ah1 press" style="width:100%;border:0;background:transparent;padding:14px 16px;text-align:left;color:var(--ink)" data-act="popen" data-id="' + esc(p.id) + '" aria-expanded="' + open + '">' +
+      '<span><b>' + esc(p.name) + '</b>' + (p.area ? ' · ' + esc(p.area) : '') + (p.status === 'Paused' ? ' <span class="ptag">Paused</span>' : '') + '<br><span class="ah2">' + esc(stars(p)) + ' · ' + p.shifts + ' this month' + (p.hasPin ? '' : ' · no PIN') + '</span></span>' +
+      '<span><b class="num">' + rs(p.due) + '</b><br><span class="ah2">due</span></span></button>';
+    if (!open) { return '<div class="astock" style="padding:0">' + head + '</div>'; }
+    return '<div class="astock" style="padding:0">' + head + '<div class="abody">' +
+      '<p>' + (p.mobile ? '<a href="tel:+91' + esc(p.mobile) + '">' + esc(p.mobile) + '</a>' : '') + (p.upi ? ' · UPI ' + esc(p.upi) : ' · no UPI yet') + '</p>' +
+      '<p class="ah2">Documents: ' + (p.verified ? esc(p.verified) : 'not checked yet') + '<br>Terms agreed: ' + (p.consent ? esc(p.consent) : 'not recorded') + (p.note ? '<br>' + esc(p.note) : '') + '</p>' +
+      (led.length ? '<h2 class="osec">Recent</h2>' + led.map(shiftLine).join('') : '<p class="ah2">No evenings recorded yet.</p>') +
+      '<div class="arow"><button class="btn press" data-act="pshift" data-id="' + esc(p.id) + '">' + (p.role === 'Cleaning' ? 'Add session' : 'Add evening') + '</button>' +
+      (p.due > 0 ? '<button class="btn press ' + (S.pPay === p.id ? 'confirmdark' : 'dark') + '" data-act="ppay" data-id="' + esc(p.id) + '"' + (S.busy['pay' + p.id] ? ' disabled' : '') + '>' + (S.pPay === p.id ? 'Tap again: paid ' + rs(p.due) : 'Mark ' + rs(p.due) + ' paid') + '</button>' : '') + '</div>' +
+      '<div class="arow"><button class="btn dark press" data-act="pedit" data-id="' + esc(p.id) + '">Edit</button>' +
+      '<button class="btn dark press" data-act="pstatus" data-id="' + esc(p.id) + '">' + (p.status === 'Paused' ? 'Resume' : 'Pause') + '</button>' +
+      '<button class="btn dark press" data-act="preset" data-id="' + esc(p.id) + '">New PIN</button></div></div></div>';
+  }
+  function requestForm() {
+    var rot = S.pRot, rest = rot && rot.flagged && rot.flagged.length ? rot.flagged : [];
+    return '<div class="astock"><div class="ah1"><b>New request</b><button class="btn small dark press" data-act="preqclose">Close</button></div>' +
+      '<div class="agrid"><label><span>Role</span><select id="q-role" class="ainput">' + (pdata().roles || []).map(function (r) { return '<option' + (r === S.pRole ? ' selected' : '') + '>' + r + '</option>'; }).join('') + '</select></label>' +
+      '<label><span>Date</span><input id="q-date" class="ainput" type="date" min="' + today() + '" value="' + (S.pDate || today()) + '"></label>' +
+      '<label><span>Time</span><input id="q-time" class="ainput" value="' + esc(S.pTime || '5 to 8 PM') + '"></label>' +
+      '<label><span>People needed</span><input id="q-need" class="ainput" type="number" inputmode="numeric" min="1" max="20" value="' + (S.pNeed || 2) + '"></label></div>' +
+      (rest.length ? '<div class="box warn" role="status">Rest check: ' + rest.map(function (f) { return esc(f.name) + ' worked ' + f.days.map(dayLabel).join(' and '); }).join('; ') +
+        '. This would be their 3rd shift day in a row, so they won’t be offered it unless you tick the box below.</div>' : '') +
+      '<div class="ah1 aswitch"><span>Offer to everyone, even those due a rest</span><button class="toggle" role="switch" aria-checked="' + !!S.pOver + '" data-act="pover"><span></span>' + (S.pOver ? 'On' : 'Off') + '</button></div>' +
+      '<button class="btn big press" data-act="preqsave"' + (S.busy.preq ? ' disabled' : '') + '>' + (S.busy.preq ? 'Sending…' : 'Send request') + '</button></div>';
+  }
+  function waText(r) {
+    return 'Blio needs ' + r.needed + ' ' + (r.role === 'Cleaning' ? 'fish cleaning helper' : 'delivery partner') + (r.needed > 1 ? 's' : '') + ' on ' + dayLabel(r.date) + (r.time ? ', ' + r.time : '') +
+      '. Open the Blio Partner app (blio.in/partner) and tap “I’ll take it”. First come, first served.';
+  }
+  function requestCard(r) {
+    var live = r.status === 'Open' || r.status === 'Filled';
+    return '<div class="astock' + (live ? '' : ' off') + '"><div class="ah1"><b>' + esc(dayLabel(r.date)) + ' · ' + esc(r.time) + '</b><span class="ptag' + (r.status === 'Filled' ? ' paid' : '') + '">' + esc(r.status === 'Open' ? r.accepted.length + ' of ' + r.needed : r.status) + '</span></div>' +
+      '<p class="ah2">' + esc(r.role) + (r.accepted.length ? ' · ' + r.accepted.map(pname).map(esc).join(', ') : ' · nobody yet') + (r.override ? ' · offered to all' : '') + '</p>' +
+      (live ? '<div class="arow"><a class="btn small press" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(waText(r)) + '">Share on WhatsApp</a>' +
+        '<button class="btn small dark press" data-act="reqcancel" data-id="' + esc(r.id) + '">Cancel</button></div>' : '') + '</div>';
+  }
+  function partnersHtml() {
+    var pd = pdata();
+    if (!pd) { return '<div class="stack"><div class="dhead"><h1 class="anton">Partners</h1></div><div class="box warn">Partners need the latest Code.gs. Paste it into Apps Script, deploy a new version, then tap Refresh.</div><button class="btn press" data-act="refresh">Refresh</button></div>'; }
+    var list = pd.list.filter(function (p) { return p.role === S.pRole; }), cnt = function (r) { return pd.list.filter(function (p) { return p.role === r; }).length; };
+    var edit = S.pForm === '+' ? { role: S.pRole } : S.pForm ? pd.list.filter(function (p) { return p.id === S.pForm; })[0] : null;
+    if (edit && S.pDraft) { edit = Object.assign({}, edit, S.pDraft); }
+    if (edit && S.pFlags) { edit = Object.assign({}, edit, S.pFlags); }
+    else if (edit && edit.id) { edit = Object.assign({}, edit, { verifiedOn: !!edit.verified, consentOn: !!edit.consent }); }
+    var sp = S.pShift ? pd.list.filter(function (p) { return p.id === S.pShift; })[0] : null;
+    var reqs = pd.requests.filter(function (r) { return r.status === 'Open' || r.status === 'Filled'; }), older = pd.requests.filter(function (r) { return !(r.status === 'Open' || r.status === 'Filled'); }).slice(0, 5);
+    return '<div class="stack"><div class="dhead"><h1 class="anton">Partners</h1></div>' +
+      (S.note ? '<div class="box ok" role="status">' + esc(S.note) + '</div>' : '') + (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div>' : '') +
+      '<div class="arow"><button class="btn press" data-act="preqopen">New request</button><button class="btn dark press" data-act="paddopen">Add partner</button></div>' +
+      (S.pReq ? requestForm() : '') + (edit ? partnerForm(edit) : '') + (sp ? shiftForm(sp) : '') +
+      '<div class="chiprow" role="group" aria-label="Role">' + pd.roles.map(function (r) { return '<button class="chip press" data-act="prole" data-v="' + r + '" aria-pressed="' + (S.pRole === r) + '">' + r + ' (' + cnt(r) + ')</button>'; }).join('') + '</div>' +
+      (list.length ? list.map(partnerCard).join('') : '<div class="box">No ' + S.pRole.toLowerCase() + ' partners yet. Tap Add partner.</div>') +
+      '<h2 class="osec">Open requests</h2>' + (reqs.length ? reqs.map(requestCard).join('') : '<div class="box">None open. Tap New request to ask partners for a shift.</div>') +
+      (older.length ? '<h2 class="osec">Earlier</h2>' + older.map(requestCard).join('') : '') +
+      '<span class="dsub">Pay rates are in Settings. Partners sign in at blio.in/partner with their mobile and the PIN you give them.</span></div>';
   }
 
   function render() {
@@ -429,7 +534,7 @@
         (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div><button class="btn press" data-act="refresh">Try again</button>' : '<div class="box">Loading orders and stock…</div>') + '</div>';
       return;
     }
-    main.innerHTML = ({ orders: ordersHtml, stock: stockHtml, fish: fishHtml, settings: settingsHtml }[S.tab] || ordersHtml)();
+    main.innerHTML = ({ orders: ordersHtml, stock: stockHtml, fish: fishHtml, partners: partnersHtml, settings: settingsHtml }[S.tab] || ordersHtml)();
     main.scrollTop = keepY;
     // a new confirmation or error slides in once; the same message is not re-animated on later redraws
     var msg = (S.note || '') + '|' + (S.warn || '') + '|' + (S.err || '');
@@ -566,6 +671,68 @@
         var kc = (S.data.categories || []).filter(function (x) { return x.name === v; })[0]; if (!kc) { return; }
         act('cat', { op: 'category', name: v, show: !kc.show }, function () { kc.show = !kc.show; S.note = v + (kc.show ? ' is shown in the shop.' : ' is hidden from the shop.'); }, 'Couldn’t update ' + v + '.');
         break;
+      case 'prole': S.pRole = v; S.pOpen = ''; S.pPay = ''; render(); break;
+      case 'popen': S.pOpen = S.pOpen === id ? '' : id; S.pPay = ''; S.note = ''; render(); break;
+      case 'paddopen': S.pForm = '+'; S.pFlags = null; S.pDraft = null; S.pReq = false; S.pShift = ''; S.note = ''; S.err = ''; render(); main.scrollTop = 0; break;
+      case 'pedit': S.pForm = id; S.pFlags = null; S.pDraft = null; S.pReq = false; S.pShift = ''; S.note = ''; S.err = ''; render(); main.scrollTop = 0; break;
+      case 'pformclose': S.pForm = ''; S.pFlags = null; S.pDraft = null; render(); break;
+      case 'pflag':
+        var cur = S.pFlags || {}, ed = S.pForm === '+' ? {} : (pdata().list.filter(function (p) { return p.id === S.pForm; })[0] || {});
+        S.pFlags = Object.assign({ verifiedOn: !!ed.verified, consentOn: !!ed.consent }, cur); S.pFlags[v] = !S.pFlags[v];
+        S.pDraft = { name: $('#pf-name').value, mobile: $('#pf-mobile').value, area: $('#pf-area').value, upi: $('#pf-upi').value, note: $('#pf-note').value, role: $('#pf-role').value };
+        render(); break;
+      case 'psave':
+        var pb = { op: 'partner', name: $('#pf-name').value.trim(), mobile: $('#pf-mobile').value.replace(/[^0-9]/g, '').slice(-10), role: $('#pf-role').value, area: $('#pf-area').value.trim(), upi: $('#pf-upi').value.trim(), note: $('#pf-note').value.trim() };
+        var ppin = $('#pf-pin').value.trim();
+        if (!pb.name) { S.err = 'Add the partner’s name.'; render(); return; }
+        if (!/^[6-9][0-9]{9}$/.test(pb.mobile)) { S.err = 'The mobile needs 10 digits.'; render(); return; }
+        if (ppin && !/^[0-9]{4,8}$/.test(ppin)) { S.err = 'The PIN must be 4 to 8 digits.'; render(); return; }
+        if (ppin) { pb.pin = ppin; }
+        if (id) { pb.id = id; }
+        var fl = S.pFlags; if (fl) { pb.verified = !!fl.verifiedOn; pb.consent = !!fl.consentOn; }
+        else if (!id) { pb.verified = false; pb.consent = false; }
+        act('psave', pb, function (d) {
+          S.note = pb.name + (id ? ' saved.' : ' added.') + (d.newPin ? ' PIN: ' + d.newPin + '. Tell ' + pb.name.split(' ')[0] + ' now. It isn’t shown again.' : '');
+          S.pForm = ''; S.pFlags = null; S.pDraft = null; S.pOpen = d.id; S.pRole = pb.role;
+        }, 'Couldn’t save the partner.');
+        break;
+      case 'pstatus':
+        var pp = pdata().list.filter(function (p) { return p.id === id; })[0]; if (!pp) { return; }
+        act('pstatus', { op: 'partner', id: id, status: pp.status === 'Paused' ? 'Active' : 'Paused' }, function () { S.note = pp.name + (pp.status === 'Paused' ? ' is paused.' : ' is active.'); }, 'Couldn’t update ' + pp.name + '.');
+        break;
+      case 'preset':
+        var rp = pdata().list.filter(function (p) { return p.id === id; })[0]; if (!rp) { return; }
+        act('preset', { op: 'partner', id: id, resetPin: true }, function (d) { S.note = 'New PIN for ' + rp.name + ': ' + d.newPin + '. Tell them now. It isn’t shown again.'; }, 'Couldn’t make a new PIN.');
+        break;
+      case 'pshift': S.pShift = id; S.pForm = ''; S.pReq = false; S.note = ''; S.err = ''; render(); main.scrollTop = 0; break;
+      case 'pshiftclose': S.pShift = ''; render(); break;
+      case 'pshiftsave':
+        var sp2 = pdata().list.filter(function (p) { return p.id === id; })[0], sb = { op: 'shift', partner: id, date: $('#sf-date').value, rating: $('#sf-rating').value, pay: $('#sf-pay').value.trim() };
+        if (!sb.date) { S.err = 'Choose the date.'; render(); return; }
+        if (sp2.role === 'Cleaning') { sb.fishKg = Number($('#sf-fish').value) || 0; sb.prawnKg = Number($('#sf-prawn').value) || 0; if (!(sb.fishKg + sb.prawnKg > 0)) { S.err = 'Enter the kg cleaned.'; render(); return; } }
+        else { sb.drops = Number($('#sf-drops').value) || 0; sb.km = Number($('#sf-km').value) || 0; if (!(sb.drops > 0)) { S.err = 'Enter the number of deliveries.'; render(); return; } }
+        act('shift', sb, function (d) { S.note = sp2.name + ': ' + dayLabel(sb.date) + ' saved, ' + rs(d.pay) + ' due.'; S.pShift = ''; S.pOpen = id; },
+          'Couldn’t save. Check that ' + sp2.name.split(' ')[0] + ' has no entry for that date already.');
+        break;
+      case 'voidshift': act('void' + id, { op: 'voidshift', id: id }, function () { S.note = 'Entry removed.'; }, 'Couldn’t remove it. Paid entries can’t be removed.'); break;
+      case 'ppay':
+        if (S.pPay !== id) { S.pPay = id; render(); return; }
+        var pay = pdata().list.filter(function (p) { return p.id === id; })[0];
+        S.pPay = ''; act('pay' + id, { op: 'paypartner', partner: id }, function (d) { S.note = pay.name + ': ' + rs(d.paid) + ' marked paid for ' + d.count + (d.count === 1 ? ' entry.' : ' entries.'); }, 'Couldn’t mark paid.');
+        break;
+      case 'preqopen': S.pReq = true; S.pForm = ''; S.pShift = ''; S.note = ''; S.err = ''; render(); rotCheck(); break;
+      case 'preqclose': S.pReq = false; S.pRot = null; render(); break;
+      case 'pover': S.pDate = $('#q-date').value; S.pTime = $('#q-time').value; S.pNeed = $('#q-need').value; S.pRole = $('#q-role').value; S.pOver = !S.pOver; render(); break;
+      case 'preqsave':
+        var rq = { op: 'prequest', role: $('#q-role').value, date: $('#q-date').value, time: $('#q-time').value.trim(), needed: Number($('#q-need').value), override: !!S.pOver };
+        if (!rq.date || rq.date < today()) { S.err = 'Choose today or a later date.'; render(); return; }
+        if (!(rq.needed >= 1 && rq.needed <= 20)) { S.err = 'People needed: 1 to 20.'; render(); return; }
+        act('preq', rq, function (d) {
+          S.note = 'Request sent to ' + d.sentTo + ' ' + rq.role.toLowerCase() + ' partner' + (d.sentTo === 1 ? '' : 's') + '.' + (d.rest.length ? ' Resting: ' + d.rest.map(function (f) { return f.name; }).join(', ') + '.' : '') + ' Tap Share on WhatsApp to post it in the partner group.';
+          S.pReq = false; S.pRot = null; S.pOver = false; S.pRole = rq.role; load(true);
+        }, 'Couldn’t send the request.');
+        break;
+      case 'reqcancel': act('rq' + id, { op: 'prequest', cancel: true, id: id }, function () { S.note = 'Request cancelled.'; }, 'Couldn’t cancel it.'); break;
       case 'sw':
         main.querySelectorAll('[data-s]').forEach(function (i) { var k = i.getAttribute('data-s'); S.data.settings[k] = k === 'harbours' ? i.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean) : i.value.trim(); });
         S.data.settings[v] = !S.data.settings[v]; render();
@@ -595,6 +762,12 @@
     }
     if (e.target.id === 'c-harbour') { var w = $('#c-other-wrap'); if (w) { w.hidden = e.target.value !== '*'; if (!w.hidden) { $('#c-other').focus(); } } }
   });
+
+  function rotCheck() {
+    var r = $('#q-role'), d = $('#q-date'); if (!r || !d || !d.value) { return; }
+    call({ op: 'rotcheck', role: r.value, date: d.value }).then(function (x) { if (x.ok) { S.pRot = x; S.pDate = d.value; S.pTime = $('#q-time') ? $('#q-time').value : ''; S.pNeed = $('#q-need') ? $('#q-need').value : ''; S.pRole = r.value; render(); } }).catch(function () {});
+  }
+  document.addEventListener('change', function (e) { if (e.target.id === 'q-role' || e.target.id === 'q-date') { rotCheck(); } });
   document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'a-pw') { var b = $('[data-act=login]'); if (b) { b.click(); } } });
 
   // refresh every minute on the Orders tab, unless someone is typing or has unsaved changes

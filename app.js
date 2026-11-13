@@ -387,7 +387,7 @@
         '<p>Questions or a special order? WhatsApp <a href="https://wa.me/' + CONFIG.whatsapp + '">+91 88568 88766</a>.</p>' +
         '<p>Blio is a brand of Farmblue Agrotech Private Limited, House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra. <a href="https://farmblue.in">farmblue.in</a></p>' +
         '<small>Prices are per kg of whole fish and change with each catch. The final bill is confirmed on WhatsApp before you pay.</small>' +
-        '<p><a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a> &middot; <a href="/refund">Refunds</a></p>' +
+        '<p><a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a> &middot; <a href="/refund">Refunds</a> &middot; <a href="/careers">Work with Blio</a></p>' +
       '</footer></div>';
   }
   function cap(t) { t = String(t || ''); return t.charAt(0).toUpperCase() + t.slice(1); }
@@ -901,7 +901,7 @@
         '<div class="fld"><label for="d-pin">' + (S.loginRole === 'packing' ? 'Packing PIN' : 'Delivery PIN') + '</label><input id="d-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="PIN from Blio Admin"></div>' +
         (S.dErr ? '<div class="box warn" role="alert">' + esc(S.dErr) + '</div>' : '') +
         '<button class="btn big press" data-act="dlogin">' + (S.loginRole === 'packing' ? 'Open packing' : 'Open deliveries') + '</button>' +
-        '<span class="muted-g">For the Blio team only.</span>' + installHtml() + '</div>';
+        '<span class="muted-g">For the Blio team only. Delivery or cleaning <a href="/partner/" style="color:var(--paper)">partner? Open Blio Partner</a>.</span>' + installHtml() + '</div>';
     }
     if (S.dTab === 'packing') { return packingHtml(anim); }
     var RANK = { 'Arriving next': 0, 'Out for delivery': 1, 'Collected': 2, 'Packed': 3, 'Confirmed': 4 };
