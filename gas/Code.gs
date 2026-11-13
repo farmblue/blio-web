@@ -9,6 +9,7 @@
  * POST action=start       rider starts the round: orders become Out for delivery (needs the delivery PIN)
  * POST action=next        rider's next stop: that order becomes Arriving next (needs the delivery PIN)
  * POST action=delivered   marks an order Delivered (needs the delivery PIN)
+ * POST action=partner     Blio Partner app (blio.in/partner): own work, open requests, take a shift (needs the partner's mobile and own PIN)
  * POST action=admin       Blio Admin app (blio.in/admin): orders, catch lots, counts, fish list, settings, bills (needs the admin password)
  * Sheet menu Blio > Make bill for selected order   PDF bill in Drive plus a WhatsApp link to send it
  */
@@ -48,9 +49,19 @@ var SETTINGS = [
   ['Go live automatically after (minutes)', 30],
   ['Auto go-live on (Yes or No)', 'Yes'],
   ['Harbours (separated by commas)', 'Goa, Vengurla, Malvan, Devgad, Ratnagiri'],
-  ['Packing PIN (4 to 8 digits)', '']
+  ['Packing PIN (4 to 8 digits)', ''],
+  ['Partner delivery: per evening (₹)', 100],
+  ['Partner delivery: per delivery (₹)', 15],
+  ['Partner delivery: fuel per km (₹)', 2.1],
+  ['Partner cleaning: per session (₹)', 100],
+  ['Partner cleaning: per kg of fish (₹)', 10],
+  ['Partner cleaning: per kg of prawns and crab (₹)', 25]
 ];
-var SETUP_VERSION = '2026-11-02a';   // change this when setup_ adds new tabs, columns or settings
+var PARTNER_COLS = ['Partner ID', 'Name', 'Mobile', 'Role', 'Area', 'UPI', 'PIN', 'Status', 'Joined', 'Verified', 'Consent', 'Note'];
+var PREQ_COLS = ['Request ID', 'Role', 'Date', 'Time', 'Needed', 'Accepted', 'Status', 'Override rotation', 'Created at', 'By'];
+var PLEDGER_COLS = ['Entry ID', 'Date', 'Partner ID', 'Role', 'Drops', 'Km', 'Fish kg', 'Prawn and crab kg', 'Pay', 'Rating', 'Status', 'Paid at', 'Request ID', 'Note', 'Added at'];
+var PROLES = ['Delivery', 'Cleaning'];
+var SETUP_VERSION = '2026-11-13a';   // change this when setup_ adds new tabs, columns or settings
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
   address: 'House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra',
@@ -101,6 +112,9 @@ function setup_() {
   tab_('Counts', COUNT_COLS);
   tab_('Categories', CAT_COLS, CAT_SEED);
   tab_('Coupons', COUPON_COLS);
+  tab_('Partners', PARTNER_COLS);
+  tab_('Partner requests', PREQ_COLS);
+  tab_('Partner ledger', PLEDGER_COLS);
   try { tidyOrders_(); } catch (e) {}
   var s = sheet_('Settings'), have = s.getRange(2, 1, SETTINGS.length, 1).getValues();
   SETTINGS.forEach(function (row, i) {
@@ -484,6 +498,7 @@ function doPost(e) {
     var o = JSON.parse(e.postData.contents);
     if (['delivered', 'start', 'next', 'packed', 'unpack', 'collect', 'uncollect'].indexOf(o.action) > -1) return json_(stage_(o));
     if (o.action === 'admin') return json_(admin_(o));
+    if (o.action === 'partner') return json_(partner_(o));
     return json_(placeOrder_(o));
   } catch (err) {
     return json_({ ok: false, error: 'server' });
@@ -690,7 +705,8 @@ function adminSettings_() {
   return { fee: deliveryFee_(), upi: String(setting_('UPI ID')).trim(), payee: String(setting_('Payee name')).trim(),
     rider: String(setting_('Delivery person mobile')).trim(), fssai: String(setting_('FSSAI number')).trim(),
     pin: String(setting_('Delivery PIN')).trim(), packPin: String(setting_('Packing PIN')).trim(), start: hhmm_(sc.start), end: hhmm_(sc.end), cutoff: hhmm_(sc.cutoff),
-    sellDays: sc.sellDays, discOn: sc.discOn, discPct: sc.discPct, showLanding: sc.showLanding, autoMin: sc.autoMin, autoOn: sc.autoOn, harbours: harbours_() };
+    sellDays: sc.sellDays, discOn: sc.discOn, discPct: sc.discPct, showLanding: sc.showLanding, autoMin: sc.autoMin, autoOn: sc.autoOn, harbours: harbours_(),
+    pEvening: partnerRates_().evening, pDrop: partnerRates_().drop, pFuel: partnerRates_().fuel, pSession: partnerRates_().session, pFish: partnerRates_().fish, pPrawn: partnerRates_().prawn };
 }
 function adminLoad_() {
   var sc = sched_(), plan = deliveryPlan_(sc), today = ymd_(), sold = soldByLot_(), soldToday = soldByLot_(today), adj = adjByLot_();
@@ -709,7 +725,8 @@ function adminLoad_() {
       waste: Number(c['waste kg']) || 0, counted: Number(c['counted kg']) || 0, gap: Number(c['gap kg']) || 0, pieces: c['pieces counted'], by: String(c['by']) };
   });
   return { ok: true, window: plan.label, plan: plan, orders: adminOrders_(), lots: lots, counts: counts, fish: catalog_(), categories: categories_(true),
-    settings: adminSettings_(), coupons: adminCoupons_(), sizes: SIZES, sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl() };
+    settings: adminSettings_(), coupons: adminCoupons_(), sizes: SIZES, sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
+    partners: adminPartners_() };
 }
 function addLot_(o, by) {
   var cat = {}; catalog_().forEach(function (f) { cat[f.name] = f; });
@@ -910,6 +927,12 @@ function admin_(o) {
   if (o.op === 'fish') return withData(saveFish_(o, by));
   if (o.op === 'category') return withData(saveCategory_(o, by));
   if (o.op === 'coupon') return withData(saveCoupon_(o, by));
+  if (o.op === 'partner') return withData(savePartner_(o, by));
+  if (o.op === 'rotcheck') return { ok: true, flagged: rotationFlagged_(String(o.role), String(o.date)) };
+  if (o.op === 'prequest') return withData(saveRequest_(o, by));
+  if (o.op === 'shift') return withData(addShift_(o, by));
+  if (o.op === 'paypartner') return withData(payPartner_(o, by));
+  if (o.op === 'voidshift') return withData(voidShift_(o, by));
   if (o.op === 'order') {
     var sh = sheet_('Orders'), c = colIndex_(sh), row = findRow_(sh, c['Order ID'], o.id);
     if (!row) return { ok: false, error: 'notfound' };
@@ -946,12 +969,15 @@ function admin_(o) {
   if (o.op === 'settings') {
     var map = { fee: 'Delivery fee', upi: 'UPI ID', payee: 'Payee name', rider: 'Delivery person mobile', fssai: 'FSSAI number', pin: 'Delivery PIN', packPin: 'Packing PIN',
       start: 'Delivery starts', end: 'Delivery ends', cutoff: 'Same-day order cut-off', sellDays: 'Sell each catch for', discOn: 'Day-2 discount on',
+      pEvening: 'Partner delivery: per evening', pDrop: 'Partner delivery: per delivery', pFuel: 'Partner delivery: fuel per km',
+      pSession: 'Partner cleaning: per session', pFish: 'Partner cleaning: per kg of fish', pPrawn: 'Partner cleaning: per kg of prawns',
       discPct: 'Day-2 discount (%', showLanding: 'Show landing date', autoMin: 'Go live automatically', autoOn: 'Auto go-live on', harbours: 'Harbours' };
     var sd = [];
     Object.keys(map).forEach(function (k) {
       if (o[k] === undefined) return;
       var v = typeof o[k] === 'boolean' ? (o[k] ? 'Yes' : 'No') : String(o[k]).trim().slice(0, 80);
       if (k === 'fee') { v = Number(v); if (!(v >= 0 && v < 10000)) return; }
+      if (/^p[A-Z]/.test(k)) { v = Number(v); if (isNaN(v) || !(v >= 0 && v < 10000)) return; }
       if ((k === 'pin' || k === 'packPin') && v && !/^[0-9]{4,8}$/.test(v)) return;
       if ((k === 'start' || k === 'end' || k === 'cutoff') && !/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(v)) return;
       if (k === 'sellDays' && !(Number(v) >= 1 && Number(v) <= 7)) return;
@@ -979,6 +1005,224 @@ function admin_(o) {
     return { ok: true, name: pf.getName(), b64: Utilities.base64Encode(pf.getBlob().getBytes()) };
   }
   return { ok: false, error: 'bad' };
+}
+
+// ---------- partner pool: delivery and cleaning partners, open requests, shifts and pay ----------
+function digits10_(m) { return String(m || '').replace(/[^0-9]/g, '').slice(-10); }
+function cap_(s, n) { return String(s == null ? '' : s).trim().slice(0, n); }
+function partnerRates_() {
+  var n = function (p, d) { var raw = String(setting_(p)).trim(), v = Number(raw); return raw === '' || isNaN(v) ? d : v; };
+  return { evening: n('Partner delivery: per evening', 100), drop: n('Partner delivery: per delivery', 15), fuel: n('Partner delivery: fuel per km', 2.1),
+    session: n('Partner cleaning: per session', 100), fish: n('Partner cleaning: per kg of fish', 10), prawn: n('Partner cleaning: per kg of prawns', 25) };
+}
+/** Pay for one evening or session from the rates in Settings. Delivery: base + per delivery + fuel for the route. Cleaning: base + per kg. */
+function partnerPay_(role, e, r) {
+  if (role === 'Cleaning') return Math.round(r.session + (Number(e.fishKg) || 0) * r.fish + (Number(e.prawnKg) || 0) * r.prawn);
+  return Math.round(r.evening + (Number(e.drops) || 0) * r.drop + (Number(e.km) || 0) * r.fuel);
+}
+function partnerRows_() {
+  var sh = sheet_('Partners'); if (!sh || sh.getLastRow() < 2) return [];
+  return rows_('Partners').filter(function (r) { return String(r['partner id']).trim(); }).map(function (r, i) {
+    return { row: i + 2, id: String(r['partner id']).trim(), name: String(r['name']), mobile: digits10_(r['mobile']), role: String(r['role']), area: String(r['area'] || ''),
+      upi: String(r['upi'] || ''), pin: String(r['pin'] || '').trim(), status: String(r['status'] || 'Active').trim() || 'Active', joined: normDate_(r['joined']) || String(r['joined'] || ''),
+      verified: String(r['verified'] || ''), consent: String(r['consent'] || ''), note: String(r['note'] || '') };
+  });
+}
+function ledgerRows_() {
+  var sh = sheet_('Partner ledger'); if (!sh || sh.getLastRow() < 2) return [];
+  return rows_('Partner ledger').filter(function (r) { return String(r['entry id']).trim(); }).map(function (r) {
+    return { id: String(r['entry id']).trim(), date: normDate_(r['date']) || String(r['date']), partner: String(r['partner id']).trim(), role: String(r['role']),
+      drops: Number(r['drops']) || 0, km: Number(r['km']) || 0, fishKg: Number(r['fish kg']) || 0, prawnKg: Number(r['prawn and crab kg']) || 0, pay: Number(r['pay']) || 0,
+      rating: Number(r['rating']) || 0, status: String(r['status'] || 'Due').trim() || 'Due', paidAt: String(r['paid at'] || ''), request: String(r['request id'] || ''), note: String(r['note'] || '') };
+  });
+}
+function requestRows_() {
+  var sh = sheet_('Partner requests'); if (!sh || sh.getLastRow() < 2) return [];
+  return rows_('Partner requests').filter(function (r) { return String(r['request id']).trim(); }).map(function (r) {
+    var acc = String(r['accepted'] || '').split(',').map(function (x) { return x.trim(); }).filter(String);
+    return { id: String(r['request id']).trim(), role: String(r['role']), date: normDate_(r['date']) || String(r['date']), time: String(r['time'] || ''), needed: Number(r['needed']) || 1,
+      accepted: acc, status: String(r['status'] || 'Open').trim() || 'Open', override: /^y/i.test(String(r['override rotation'])), createdAt: String(r['created at'] || ''), by: String(r['by'] || '') };
+  });
+}
+function nextId_(prefix, ids, width) {
+  var max = 0; ids.forEach(function (x) { var m = String(x).match(/(\d+)$/); if (m && Number(m[1]) > max) max = Number(m[1]); });
+  return prefix + ('0000' + (max + 1)).slice(-width);
+}
+/** Partners who worked each of the last two shift days before this date for this role: they rest this shift unless you override. */
+function rotationFlagged_(role, date) {
+  var led = ledgerRows_().filter(function (e) { return e.role === role && e.status !== 'Void' && e.date < date && dayDiff_(e.date, date) <= 14; });
+  var days = []; led.forEach(function (e) { if (days.indexOf(e.date) === -1) days.push(e.date); });
+  days.sort().reverse(); days = days.slice(0, 2);
+  if (days.length < 2) return [];
+  var names = {}; partnerRows_().forEach(function (p) { names[p.id] = p; });
+  var out = [];
+  Object.keys(names).forEach(function (id) {
+    var p = names[id]; if (p.role !== role || p.status !== 'Active') return;
+    var worked = days.filter(function (d) { return led.some(function (e) { return e.partner === id && e.date === d; }); });
+    if (worked.length === 2) out.push({ id: id, name: p.name, days: days.slice().reverse() });
+  });
+  return out;
+}
+function ratingOf_(led, id) {
+  var rs = led.filter(function (e) { return e.partner === id && e.rating > 0 && e.status !== 'Void'; });
+  return { avg: rs.length ? Math.round(rs.reduce(function (a, e) { return a + e.rating; }, 0) / rs.length * 10) / 10 : 0, n: rs.length };
+}
+function adminPartners_() {
+  var led = ledgerRows_(), month = ymd_().slice(0, 7);
+  var list = partnerRows_().map(function (p) {
+    var mine = led.filter(function (e) { return e.partner === p.id && e.status !== 'Void'; }), rt = ratingOf_(led, p.id);
+    return { id: p.id, name: p.name, mobile: p.mobile, role: p.role, area: p.area, upi: p.upi, status: p.status, joined: p.joined, verified: p.verified, consent: p.consent, note: p.note,
+      hasPin: !!p.pin, rating: rt.avg, ratings: rt.n, due: mine.filter(function (e) { return e.status === 'Due'; }).reduce(function (a, e) { return a + e.pay; }, 0),
+      shifts: mine.filter(function (e) { return e.date.slice(0, 7) === month; }).length, drops: mine.filter(function (e) { return e.date.slice(0, 7) === month; }).reduce(function (a, e) { return a + e.drops; }, 0) };
+  });
+  var reqs = requestRows_().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? 1 : -1; }).slice(0, 30);
+  var ledger = led.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : a.id < b.id ? 1 : -1; }).slice(0, 200);
+  return { list: list, requests: reqs, ledger: ledger, rates: partnerRates_(), roles: PROLES };
+}
+function savePartner_(o, by) {
+  var sh = sheet_('Partners'), c = colIndex_(sh), all = partnerRows_(), cur = o.id ? all.filter(function (p) { return p.id === String(o.id); })[0] : null;
+  if (o.id && !cur) return { ok: false, error: 'notfound' };
+  var name = cap_(o.name !== undefined ? o.name : cur && cur.name, 60), mobile = digits10_(o.mobile !== undefined ? o.mobile : cur && cur.mobile);
+  var role = String(o.role !== undefined ? o.role : cur && cur.role || ''), status = String(o.status !== undefined ? o.status : cur && cur.status || 'Active');
+  if (!name) return { ok: false, error: 'name' };
+  if (!/^[6-9][0-9]{9}$/.test(mobile)) return { ok: false, error: 'mobile' };
+  if (PROLES.indexOf(role) === -1 || ['Active', 'Paused'].indexOf(status) === -1) return { ok: false, error: 'bad' };
+  if (all.some(function (p) { return p.mobile === mobile && (!cur || p.id !== cur.id); })) return { ok: false, error: 'dup' };
+  var pin = o.pin !== undefined && String(o.pin).trim() !== '' ? String(o.pin).trim() : (cur ? cur.pin : '');
+  var gen = '';
+  if (o.pin !== undefined && String(o.pin).trim() !== '' && !/^[0-9]{4,8}$/.test(pin)) return { ok: false, error: 'pin' };
+  if (!pin || o.resetPin) { pin = String(1000 + Math.floor(Math.random() * 9000)); gen = pin; }
+  var today = ymd_();
+  var verified = o.verified === undefined ? (cur ? cur.verified : '') : (o.verified ? (cur && cur.verified ? cur.verified : 'Yes, ' + today + ', by ' + by) : '');
+  var consent = o.consent === undefined ? (cur ? cur.consent : '') : (o.consent ? (cur && cur.consent ? cur.consent : 'Recorded ' + today) : '');
+  var rec = { 'Name': name, 'Mobile': mobile, 'Role': role, 'Area': cap_(o.area !== undefined ? o.area : cur && cur.area, 40), 'UPI': cap_(o.upi !== undefined ? o.upi : cur && cur.upi, 60),
+    'PIN': pin, 'Status': status, 'Verified': verified, 'Consent': consent, 'Note': cap_(o.note !== undefined ? o.note : cur && cur.note, 200) };
+  var id, row;
+  if (cur) { id = cur.id; row = findRow_(sh, c['Partner ID'], cur.id); }
+  else { id = nextId_('P', all.map(function (p) { return p.id; }), 3); row = sh.getLastRow() + 1; sh.getRange(row, c['Partner ID']).setNumberFormat('@').setValue(id); sh.getRange(row, c['Joined']).setNumberFormat('@').setValue(today); }
+  Object.keys(rec).forEach(function (k) { sh.getRange(row, c[k]).setNumberFormat('@').setValue(rec[k]); });
+  bust_();
+  adminLog_(by, 'partner ' + id + ' ' + name + (cur ? ': updated' : ': added') + (gen ? ', PIN set' : ''));
+  return { ok: true, id: id, newPin: gen };
+}
+function saveRequest_(o, by) {
+  var sh = sheet_('Partner requests'), c = colIndex_(sh), all = requestRows_();
+  if (o.cancel) {
+    var cur = all.filter(function (r) { return r.id === String(o.id); })[0]; if (!cur) return { ok: false, error: 'notfound' };
+    var rw = findRow_(sh, c['Request ID'], cur.id); sh.getRange(rw, c['Status']).setValue('Cancelled'); bust_();
+    adminLog_(by, 'request ' + cur.id + ': cancelled'); return { ok: true };
+  }
+  var role = String(o.role || ''), date = normDate_(o.date), needed = Math.round(Number(o.needed));
+  if (PROLES.indexOf(role) === -1 || !date || date < ymd_() || !(needed >= 1 && needed <= 20)) return { ok: false, error: 'bad' };
+  var id = nextId_('R', all.map(function (r) { return r.id; }), 3), row = sh.getLastRow() + 1;
+  var vals = { 'Request ID': id, 'Role': role, 'Date': date, 'Time': cap_(o.time, 30), 'Needed': needed, 'Accepted': '', 'Status': 'Open', 'Override rotation': o.override ? 'Yes' : 'No', 'Created at': now_(), 'By': by };
+  Object.keys(vals).forEach(function (k) { sh.getRange(row, c[k]).setNumberFormat('@').setValue(vals[k]); });
+  bust_();
+  var sent = partnerRows_().filter(function (p) { return p.role === role && p.status === 'Active'; });
+  var flagged = o.override ? [] : rotationFlagged_(role, date);
+  adminLog_(by, 'request ' + id + ': ' + role + ' ' + date + ' ' + cap_(o.time, 30) + ', ' + needed + ' needed');
+  return { ok: true, id: id, sentTo: sent.length - flagged.length, rest: flagged };
+}
+function addShift_(o, by) {
+  var p = partnerRows_().filter(function (x) { return x.id === String(o.partner); })[0]; if (!p) return { ok: false, error: 'notfound' };
+  var date = normDate_(o.date); if (!date || date > ymd_()) return { ok: false, error: 'date' };
+  var e = { drops: Math.round(Number(o.drops) || 0), km: Math.round((Number(o.km) || 0) * 10) / 10, fishKg: Math.round((Number(o.fishKg) || 0) * 10) / 10, prawnKg: Math.round((Number(o.prawnKg) || 0) * 10) / 10 };
+  if (e.drops < 0 || e.drops > 100 || e.km < 0 || e.km > 300 || e.fishKg < 0 || e.fishKg > 500 || e.prawnKg < 0 || e.prawnKg > 500) return { ok: false, error: 'bad' };
+  var rating = o.rating === undefined || o.rating === '' ? 0 : Number(o.rating); if (!(rating >= 0 && rating <= 5)) return { ok: false, error: 'bad' };
+  var led = ledgerRows_();
+  if (led.some(function (x) { return x.partner === p.id && x.date === date && x.status !== 'Void'; })) return { ok: false, error: 'dup' };
+  var pay = o.pay === undefined || o.pay === '' || o.pay === null ? partnerPay_(p.role, e, partnerRates_()) : Math.round(Number(o.pay));
+  if (!(pay >= 0 && pay < 100000)) return { ok: false, error: 'bad' };
+  var sh = sheet_('Partner ledger'), c = colIndex_(sh), row = sh.getLastRow() + 1, id = nextId_('E', led.map(function (x) { return x.id; }), 4);
+  var vals = { 'Entry ID': id, 'Date': date, 'Partner ID': p.id, 'Role': p.role, 'Drops': e.drops, 'Km': e.km, 'Fish kg': e.fishKg, 'Prawn and crab kg': e.prawnKg, 'Pay': pay,
+    'Rating': rating || '', 'Status': 'Due', 'Paid at': '', 'Request ID': cap_(o.request, 12), 'Note': cap_(o.note, 120), 'Added at': now_() };
+  Object.keys(vals).forEach(function (k) { sh.getRange(row, c[k]).setNumberFormat('@').setValue(vals[k]); });
+  bust_();
+  adminLog_(by, 'shift ' + id + ': ' + p.name + ' ' + date + ' Rs ' + pay);
+  return { ok: true, id: id, pay: pay };
+}
+function payPartner_(o, by) {
+  var p = partnerRows_().filter(function (x) { return x.id === String(o.partner); })[0]; if (!p) return { ok: false, error: 'notfound' };
+  var sh = sheet_('Partner ledger'), c = colIndex_(sh), v = sh.getDataRange().getValues(), total = 0, n = 0, at = now_();
+  for (var i = 1; i < v.length; i++) {
+    if (String(v[i][c['Partner ID'] - 1]).trim() !== p.id || String(v[i][c['Status'] - 1]).trim() !== 'Due') continue;
+    sh.getRange(i + 1, c['Status']).setValue('Paid'); sh.getRange(i + 1, c['Paid at']).setNumberFormat('@').setValue(at);
+    total += Number(v[i][c['Pay'] - 1]) || 0; n++;
+  }
+  bust_();
+  if (!n) return { ok: false, error: 'nothing' };
+  adminLog_(by, 'paid ' + p.name + ': Rs ' + total + ' for ' + n + ' shifts');
+  return { ok: true, paid: total, count: n };
+}
+function voidShift_(o, by) {
+  var sh = sheet_('Partner ledger'), c = colIndex_(sh), row = findRow_(sh, c['Entry ID'], o.id); if (!row) return { ok: false, error: 'notfound' };
+  if (String(sh.getRange(row, c['Status']).getValue()).trim() !== 'Due') return { ok: false, error: 'paid' };
+  sh.getRange(row, c['Status']).setValue('Void'); bust_();
+  adminLog_(by, 'shift ' + o.id + ': voided'); return { ok: true };
+}
+
+/** Partner app: each partner signs in with their mobile and their own PIN. 8 wrong tries on one mobile lock it for 10 minutes. */
+function partnerAuth_(mobile, pin) {
+  var m = digits10_(mobile), cache = CacheService.getScriptCache(), key = 'badp' + m;
+  if (m.length !== 10) return { err: 'wrong' };
+  if (Number(cache.get(key) || 0) >= 8) return { err: 'locked' };
+  var p = partnerRows_().filter(function (x) { return x.mobile === m; })[0];
+  if (!p || !p.pin || String(pin || '').trim() !== p.pin) { cache.put(key, String(Number(cache.get(key) || 0) + 1), 600); return { err: 'wrong' }; }
+  if (p.status !== 'Active') return { err: 'paused' };
+  return { p: p };
+}
+function partnerView_(p) {
+  var led = ledgerRows_(), today = ymd_(), month = today.slice(0, 7), mine = led.filter(function (e) { return e.partner === p.id && e.status !== 'Void'; });
+  var thisMonth = mine.filter(function (e) { return e.date.slice(0, 7) === month; }), rt = ratingOf_(led, p.id);
+  var recent = mine.slice().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; }).slice(0, 8)
+    .map(function (e) { return { date: e.date, drops: e.drops, km: e.km, fishKg: e.fishKg, prawnKg: e.prawnKg, pay: e.pay, status: e.status, paidAt: e.paidAt, note: e.note }; });
+  var reqs = requestRows_().filter(function (r) { return r.role === p.role && r.status !== 'Cancelled' && r.date >= today; });
+  var open = [], taken = [];
+  reqs.forEach(function (r) {
+    var view = { id: r.id, role: r.role, date: r.date, day: dayName_(r.date), time: r.time, needed: r.needed, filled: r.accepted.length, status: r.status };
+    if (r.accepted.indexOf(p.id) > -1) { taken.push(view); return; }
+    if (r.status !== 'Open' || r.accepted.length >= r.needed) return;
+    if (!r.override && rotationFlagged_(r.role, r.date).some(function (f) { return f.id === p.id; })) return;
+    open.push(view);
+  });
+  var by = function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; };
+  return { ok: true, me: { id: p.id, name: p.name, mobile: p.mobile, role: p.role, area: p.area, upi: p.upi, joined: p.joined, verified: !!p.verified, consent: !!p.consent },
+    month: { label: month, shifts: thisMonth.length, drops: thisMonth.reduce(function (a, e) { return a + e.drops; }, 0), fishKg: Math.round(thisMonth.reduce(function (a, e) { return a + e.fishKg + e.prawnKg; }, 0) * 10) / 10 },
+    rating: rt, due: mine.filter(function (e) { return e.status === 'Due'; }).reduce(function (a, e) { return a + e.pay; }, 0), recent: recent,
+    open: open.sort(by), taken: taken.sort(by), rates: partnerRates_(), contact: String(setting_('Delivery person mobile')).trim() };
+}
+function partner_(o) {
+  var a = partnerAuth_(o.mobile, o.pin);
+  if (a.err) return { ok: false, error: a.err };
+  var p = a.p;
+  if (o.op === 'take') {
+    var sh = sheet_('Partner requests'), c = colIndex_(sh), r = requestRows_().filter(function (x) { return x.id === String(o.id); })[0];
+    if (!r || r.role !== p.role || r.status === 'Cancelled' || r.date < ymd_()) return { ok: false, error: 'gone' };
+    if (r.accepted.indexOf(p.id) > -1) return partnerView_(p);
+    if (r.status !== 'Open' || r.accepted.length >= r.needed) return { ok: false, error: 'filled' };
+    if (!r.override && rotationFlagged_(r.role, r.date).some(function (f) { return f.id === p.id; })) return { ok: false, error: 'rest' };
+    var row = findRow_(sh, c['Request ID'], r.id), acc = r.accepted.concat([p.id]);
+    sh.getRange(row, c['Accepted']).setNumberFormat('@').setValue(acc.join(','));
+    if (acc.length >= r.needed) sh.getRange(row, c['Status']).setValue('Filled');
+    bust_(); adminLog_(p.name, 'took request ' + r.id + ' (' + acc.length + ' of ' + r.needed + ')');
+    return partnerView_(p);
+  }
+  if (o.op === 'leave') {
+    var sh2 = sheet_('Partner requests'), c2 = colIndex_(sh2), r2 = requestRows_().filter(function (x) { return x.id === String(o.id); })[0];
+    if (!r2 || r2.accepted.indexOf(p.id) === -1 || r2.date <= ymd_()) return { ok: false, error: 'late' };
+    var row2 = findRow_(sh2, c2['Request ID'], r2.id);
+    sh2.getRange(row2, c2['Accepted']).setNumberFormat('@').setValue(r2.accepted.filter(function (x) { return x !== p.id; }).join(','));
+    if (r2.status === 'Filled') sh2.getRange(row2, c2['Status']).setValue('Open');
+    bust_(); adminLog_(p.name, 'left request ' + r2.id);
+    return partnerView_(p);
+  }
+  if (o.op === 'upi') {
+    var ps = sheet_('Partners'), pc = colIndex_(ps), prow = findRow_(ps, pc['Partner ID'], p.id), upi = cap_(o.upi, 60);
+    if (upi && !/^[A-Za-z0-9._-]{2,}@[A-Za-z]{2,}$/.test(upi)) return { ok: false, error: 'upi' };
+    ps.getRange(prow, pc['UPI']).setNumberFormat('@').setValue(upi); bust_(); p.upi = upi;
+    return partnerView_(p);
+  }
+  return partnerView_(p);
 }
 
 // ---------- bills ----------
