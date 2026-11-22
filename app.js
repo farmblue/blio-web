@@ -387,7 +387,7 @@
         '<p>Questions or a special order? WhatsApp <a href="https://wa.me/' + CONFIG.whatsapp + '">+91 88568 88766</a>.</p>' +
         '<p>Blio is a brand of Farmblue Agrotech Private Limited, House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra. <a href="https://farmblue.in">farmblue.in</a></p>' +
         '<small>Prices are per kg of whole fish and change with each catch. The final bill is confirmed on WhatsApp before you pay.</small>' +
-        '<p><a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a> &middot; <a href="/refund">Refunds</a> &middot; <a href="/careers">Work with Blio</a></p>' +
+        '<p><a href="/privacy">Privacy</a> &middot; <a href="/data-request">My data</a> &middot; <a href="/terms">Terms</a> &middot; <a href="/refund">Refunds</a> &middot; <a href="/careers">Work with Blio</a></p>' +
       '</footer></div>';
   }
   function cap(t) { t = String(t || ''); return t.charAt(0).toUpperCase() + t.slice(1); }
@@ -469,7 +469,7 @@
       (S.short ? '<div class="box warn" role="alert">' + esc(S.short) + '</div>' : '') +
       (e.server ? '<div class="box warn" role="alert">We couldn’t place the order. Check your internet connection and try again.</div>' : '') +
       '<button class="btn big press" data-act="send"' + (S.sending ? ' disabled' : '') + '>' + (S.sending ? 'Placing your order…' : 'Place order') + '</button>' +
-      '<span class="muted-g">Next you send the order to us on WhatsApp. ' + (payNow() ? 'Then pay by UPI. If the weight changes the bill a little, we settle the difference at delivery.' : 'You pay at delivery, by cash or UPI.') + '</span>' +
+      '<span class="muted-g">By placing the order you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>. Next you send the order to us on WhatsApp. ' + (payNow() ? 'Then pay by UPI. If the weight changes the bill a little, we settle the difference at delivery.' : 'You pay at delivery, by cash or UPI.') + '</span>' +
       '</div>';
   }
 
@@ -711,7 +711,7 @@
     }
     S.sending = true; keepScroll();
     fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines, coupon: S.coupon ? S.coupon.code : '', payBy: payNow() ? 'now' : 'delivery' }) })
+      body: JSON.stringify({ name: f.name, phone: f.phone, address: f.address, area: f.area, notes: f.notes, lat: f.lat || null, lng: f.lng || null, items: lines, coupon: S.coupon ? S.coupon.code : '', payBy: payNow() ? 'now' : 'delivery', agree: true }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (d.ok) { finish({ id: d.id, token: d.token, lines: d.lines, subtotal: d.subtotal, fee: d.fee, discount: d.discount || 0, coupon: d.coupon || '', total: d.total, delivery: d.delivery, payBy: d.payBy || '' }); return; }
@@ -724,6 +724,8 @@
             return x.name + (x.size ? ' ' + x.size.toLowerCase() : '') + (x.left ? (hide ? ' (not enough left)' : ' (only ' + fmtKg(x.left) + ' left)') : ' (sold out)'); }).join(', ') + '. Please change your slip and place the order again.';
           loadApi();
           S.short = msg;
+        } else if (d.error === 'many') {
+          S.short = 'Too many orders from this number in the last hour. Please WhatsApp us on +91 88568 88766 to place more.';
         } else { S.errors = { server: true }; }
         keepScroll();
       })
@@ -778,7 +780,7 @@
   function loadDeliveries() {
     if (!CONFIG.api || !S.dpin) { return; }
     S.dLoading = true; S.dErr = ''; keepScroll();
-    fetch(CONFIG.api + '?action=deliveries&pin=' + encodeURIComponent(S.dpin), { cache: 'no-store' })
+    fetch(CONFIG.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'deliveries', pin: S.dpin }) })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         S.dLoading = false;

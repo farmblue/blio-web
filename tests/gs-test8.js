@@ -68,12 +68,12 @@ r=post({name:'B',phone:'9876543211',address:'y',items:[{name:'Bangda',key:opt('B
 // confirm both
 L=A({op:'load'}); L.orders.forEach(o=>A({op:'order',id:o.id,status:'Confirmed'}));
 // staff roles
-let d=get({action:'deliveries',pin:'222222'}); console.log('packer roles', JSON.stringify(d.roles), 'orders?', !!d.orders, 'cut list', JSON.stringify(d.pack.cutList), 'first', JSON.stringify(d.pack.orders[0]));
+let d=post({action:'deliveries',pin:'222222'}); console.log('packer roles', JSON.stringify(d.roles), 'orders?', !!d.orders, 'cut list', JSON.stringify(d.pack.cutList), 'first', JSON.stringify(d.pack.orders[0]));
 console.log('rider start with packer pin', JSON.stringify(post({action:'start',pin:'222222',ids:['BL-26-10-0001']})));
 console.log('packed', JSON.stringify(post({action:'packed',pin:'222222',by:'Ravi',id:'BL-26-10-0001'})), 'packed by rider pin', JSON.stringify(post({action:'packed',pin:'111111',id:'BL-26-10-0002'})));
-d=get({action:'deliveries',pin:'222222'}); console.log('after pack statuses', d.pack.orders.map(o=>o.id+':'+o.status+':'+o.packedBy).join(' '), 'cut list now', JSON.stringify(d.pack.cutList));
+d=post({action:'deliveries',pin:'222222'}); console.log('after pack statuses', d.pack.orders.map(o=>o.id+':'+o.status+':'+o.packedBy).join(' '), 'cut list now', JSON.stringify(d.pack.cutList));
 console.log('unpack', post({action:'unpack',pin:'222222',id:'BL-26-10-0001'}).ok);
-d=get({action:'deliveries',pin:'111111'}); console.log('rider roles', JSON.stringify(d.roles), d.orders.length, !!d.pack);
+d=post({action:'deliveries',pin:'111111'}); console.log('rider roles', JSON.stringify(d.roles), d.orders.length, !!d.pack);
 // bills
 let b=A({op:'bill',id:'BL-26-10-0001'}); console.log('bill', b.ok, b.name, b.b64, b.msg.split('\n')[2]);
 let tok=sheets.Orders.d[1][sheets.Orders.d[0].indexOf('Token')];

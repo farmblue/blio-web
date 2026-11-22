@@ -385,6 +385,22 @@
         '<button class="btn press" data-act="cpsave"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Add coupon') + '</button>' +
         '<span class="dsub">Customers type the code on their slip. It is checked again when they place the order. Cancelled orders don’t count as uses. Coupons don’t apply to items already on offer.</span></div>';
   }
+  /** Customers' data requests from blio.in/data-request: delete, show, correct or stop using their data. */
+  function dreqHtml() {
+    var list = (S.data && S.data.dataRequests) || [], open = list.filter(function (r) { return r.status === 'Open'; });
+    if (!list.length) { return ''; }
+    return '<h2 class="osec">Privacy requests' + (open.length ? ' (' + open.length + ' open)' : '') + '</h2>' + list.slice(0, 15).map(function (r) {
+      var busy = !!S.busy['dr' + r.id], isOpen = r.status === 'Open';
+      return '<div class="aorder open"><div class="abody"><p><b>' + esc(r.type) + '</b> · ' + esc(r.status) + ' · ' + esc(r.id) + '</p>' +
+        '<p>' + esc(r.name || 'No name') + ' · <a href="tel:' + esc(r.mobile) + '">' + esc(r.mobile) + '</a> · ' + esc(r.at) + '</p>' +
+        (r.details ? '<p class="dnote">' + esc(r.details) + '</p>' : '') +
+        (isOpen ? '<p class="muted-g">Call the number to check it is the customer before you act.</p><div class="arow">' +
+          (r.type === 'Delete my data' ? '<button class="btn dark press" data-act="dreqerase" data-id="' + esc(r.id) + '" data-v="' + esc(r.mobile) + '"' + (busy ? ' disabled' : '') + '>Erase their data</button>' : '') +
+          '<button class="btn press" data-act="dreqclose" data-id="' + esc(r.id) + '" data-v="Done"' + (busy ? ' disabled' : '') + '>Mark done</button>' +
+          '<button class="btn dark press" data-act="dreqclose" data-id="' + esc(r.id) + '" data-v="Declined"' + (busy ? ' disabled' : '') + '>Decline</button></div>' : '') +
+        '</div></div>';
+    }).join('');
+  }
   function settingsHtml() {
     var st = S.data.settings || {}, busy = !!S.busy.settings;
     var f = function (id, label, val, extra) { return '<div class="fld"><label for="s-' + id + '">' + label + '</label><input id="s-' + id + '" class="ainput" data-s="' + id + '" value="' + esc(val) + '" ' + (extra || '') + '></div>'; };
@@ -393,6 +409,7 @@
     return '<div class="stack"><div class="dhead"><h1 class="anton">Settings</h1></div>' +
       (S.note ? '<div class="box ok" role="status">' + esc(S.note) + '</div>' : '') +
       (S.err ? '<div class="box warn" role="alert">' + esc(S.err) + '</div>' : '') +
+      dreqHtml() +
       f('fee', 'Delivery fee (₹)', st.fee, 'type="number" inputmode="numeric" min="0"') +
       f('upi', 'Company UPI ID', st.upi, 'placeholder="For example farmblue@okaxis" autocapitalize="off"') +
       f('payee', 'Payee name', st.payee) +
@@ -715,6 +732,11 @@
           'Couldn’t save. Check that ' + sp2.name.split(' ')[0] + ' has no entry for that date already.');
         break;
       case 'voidshift': act('void' + id, { op: 'voidshift', id: id }, function () { S.note = 'Entry removed.'; }, 'Couldn’t remove it. Paid entries can’t be removed.'); break;
+      case 'dreqerase':
+        if (!window.confirm('Erase name, mobile, address and notes from this customer\u2019s finished orders? Bills and amounts stay. This cannot be undone.')) { return; }
+        act('dr' + id, { op: 'erasecustomer', mobile: v }, function (d) { S.note = 'Erased on ' + d.erased + (d.erased === 1 ? ' order.' : ' orders.') + (d.kept ? ' ' + d.kept + ' still active, kept for now. Mark the request done after they are delivered and erase again.' : ''); }, 'Couldn\u2019t erase.'); break;
+      case 'dreqclose':
+        act('dr' + id, { op: 'datareq', id: id, status: v }, function () { S.note = 'Request ' + id + ' marked ' + v.toLowerCase() + '.'; }, 'Couldn\u2019t update the request.'); break;
       case 'ppay':
         if (S.pPay !== id) { S.pPay = id; render(); return; }
         var pay = pdata().list.filter(function (p) { return p.id === id; })[0];

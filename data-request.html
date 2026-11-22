@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My data request · Blio</title>
+<meta name="description" content="Ask Blio to show, correct or delete the personal data we hold about you.">
+<link rel="canonical" href="https://blio.in/data-request">
+<meta name="theme-color" content="#12404A">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<style>
+:root{--bg:#12404A;--ink:#ECE6D6;--muted:#B9C7C4;--line:#2d5a64}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.65 "Work Sans",system-ui,sans-serif}
+main{max-width:560px;margin:0 auto;padding:28px 20px 64px}
+h1{font-size:2rem;line-height:1.2;margin:.4em 0 .2em}
+.meta{color:var(--muted);font-size:.95rem}
+a{color:#F4D96C} a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #fff;outline-offset:3px}
+label{display:block;margin:16px 0 4px;font-weight:600}
+input,select,textarea{width:100%;box-sizing:border-box;font:inherit;padding:12px;border-radius:8px;border:1px solid var(--line);background:#0d3139;color:var(--ink)}
+button{margin-top:22px;width:100%;font:inherit;font-weight:700;padding:14px;border:0;border-radius:10px;background:#F4D96C;color:#12404A;cursor:pointer}
+button[disabled]{opacity:.6}
+.msg{margin-top:18px;padding:12px 14px;border-radius:8px;border:1px solid var(--line)}
+.err{border-color:#e9a08c}
+</style>
+</head>
+<body>
+<main>
+<p><a href="/">&larr; Back to Blio</a></p>
+<h1>My data request</h1>
+<p class="meta">Use this to ask us to show, correct or delete the details we hold about you. We reply within 7 days and may call the number below to check it is you. <a href="/privacy">Read how we handle data.</a></p>
+<form id="f" novalidate>
+<label for="phone">Mobile number you ordered with</label>
+<input id="phone" inputmode="numeric" autocomplete="tel" placeholder="10-digit number" maxlength="14">
+<label for="name">Your name (optional)</label>
+<input id="name" autocomplete="name" maxlength="80">
+<label for="type">What do you want?</label>
+<select id="type">
+<option>Delete my data</option>
+<option>Show my data</option>
+<option>Correct my data</option>
+<option>Stop using my data</option>
+</select>
+<label for="details">Anything we should know (optional)</label>
+<textarea id="details" rows="3" maxlength="300"></textarea>
+<button id="go" type="submit">Send request</button>
+<div id="out" role="status" aria-live="polite"></div>
+</form>
+</main>
+<script>
+(function () {
+  var API = 'https://script.google.com/macros/s/AKfycbyYRFQbohQm2STP3hSZB6G3iq2kdop0Vw2XV3BN-cOfQev1-QHH16nxOgc57oWv1r8Y/exec';
+  var f = document.getElementById('f'), out = document.getElementById('out'), go = document.getElementById('go');
+  function show(t, bad) { out.className = 'msg' + (bad ? ' err' : ''); out.textContent = t; }
+  f.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var phone = document.getElementById('phone').value.replace(/[^0-9]/g, '').slice(-10);
+    if (phone.length !== 10) { show('Please enter the 10-digit mobile number.', true); return; }
+    go.disabled = true; show('Sending…');
+    fetch(API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'datareq', phone: phone,
+      name: document.getElementById('name').value, type: document.getElementById('type').value, details: document.getElementById('details').value }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        go.disabled = false;
+        if (d.ok) { f.reset(); show('Request ' + d.id + ' received. We will reply within 7 days.'); }
+        else if (d.error === 'many') { show('You have already sent a few requests today. We will reply soon, or WhatsApp +91 88568 88766.', true); }
+        else { show('We could not send it. Please WhatsApp +91 88568 88766 or write to connect@farmblue.in.', true); }
+      })
+      .catch(function () { go.disabled = false; show('No connection. Please try again, or WhatsApp +91 88568 88766.', true); });
+  });
+})();
+</script>
+</body>
+</html>
