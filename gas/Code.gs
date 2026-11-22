@@ -21,7 +21,10 @@ var GROUPS = ['Fish', 'Prawns', 'Crabs and clams', 'Dried'];
 var PACKS = { '500 g': 0.5, '1 kg': 1 };
 var MAX_QTY = 20;
 var ORDER_COLS = ['Order ID', 'Placed at', 'Window', 'Name', 'Mobile', 'Address', 'Area', 'Items', 'Subtotal', 'Delivery',
-  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token', 'Payment', 'Out at', 'Next at', 'Packed by', 'Coupon', 'Discount', 'Pay by', 'Collected', 'Bill date'];
+  'Total', 'Status', 'Notes', 'Map', 'Final amount', 'Bill', 'Delivered at', 'Token', 'Payment', 'Out at', 'Next at', 'Packed by', 'Coupon', 'Discount', 'Pay by', 'Collected', 'Bill date', 'Agreed to'];
+var POLICY_VERSION = '2026-11-22';   // the date of the privacy policy and terms customers agree to when ordering
+var DREQ_COLS = ['Request ID', 'Received at', 'Mobile', 'Name', 'Type', 'Details', 'Status', 'Handled at', 'Handled by'];
+var DREQ_TYPES = ['Delete my data', 'Show my data', 'Correct my data', 'Stop using my data'];
 var STATUSES = ['New', 'Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next', 'Delivered', 'Cancelled'];
 var TO_DELIVER = ['Confirmed', 'Packed', 'Collected', 'Out for delivery', 'Arriving next', 'Paid'];   // 'Paid' kept for orders from before the Payment column
 var SIZES = ['', 'Small to medium', 'Medium to big'];
@@ -61,7 +64,7 @@ var PARTNER_COLS = ['Partner ID', 'Name', 'Mobile', 'Role', 'Area', 'UPI', 'PIN'
 var PREQ_COLS = ['Request ID', 'Role', 'Date', 'Time', 'Needed', 'Accepted', 'Status', 'Override rotation', 'Created at', 'By'];
 var PLEDGER_COLS = ['Entry ID', 'Date', 'Partner ID', 'Role', 'Drops', 'Km', 'Fish kg', 'Prawn and crab kg', 'Pay', 'Rating', 'Status', 'Paid at', 'Request ID', 'Note', 'Added at'];
 var PROLES = ['Delivery', 'Cleaning'];
-var SETUP_VERSION = '2026-11-13a';   // change this when setup_ adds new tabs, columns or settings
+var SETUP_VERSION = '2026-11-22a';   // change this when setup_ adds new tabs, columns or settings
 var COMPANY = {
   name: 'Farmblue Agrotech Private Limited',
   address: 'House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra',
@@ -109,6 +112,7 @@ function setup_() {
   ensureHeaders_(sheet_('Order lines'), ['Order ID', 'Window', 'Item', 'Pack', 'Cut', 'Qty', 'Kg', 'Line total', 'Status', 'Lot', 'Size', 'List price', 'Off %']);
   ensureHeaders_(sheet_('Products'), ['Yield %', 'Show kg left', 'Show origin', 'Note for customers']);
   tab_('Stock', STOCK_COLS);
+  tab_('Data requests', DREQ_COLS);
   tab_('Counts', COUNT_COLS);
   tab_('Categories', CAT_COLS, CAT_SEED);
   tab_('Coupons', COUPON_COLS);
@@ -366,6 +370,15 @@ function products_(windowId) {
 }
 function deliveryFee_() { var f = Number(setting_('Delivery fee')); return isNaN(f) ? 40 : f; }
 
+/** Allows at most max calls per key in secs seconds. Returns false once the limit is reached. */
+function throttle_(key, max, secs) {
+  try {
+    var cache = CacheService.getScriptCache(), n = Number(cache.get(key) || 0);
+    if (n >= max) return false;
+    cache.put(key, String(n + 1), secs);
+  } catch (e) {}
+  return true;
+}
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 // ---------- delivery PIN, with a lockout after 10 wrong tries in 10 minutes ----------
@@ -465,14 +478,6 @@ function doGet(e) {
   bust_();
   var p = (e && e.parameter) || {};
   if (p.action === 'myorders') return json_({ ok: true, orders: myOrders_(String(p.ids || '')) });
-  if (p.action === 'deliveries') {
-    var st = staff_(p.pin);
-    if (st.chk !== 'ok') return json_({ ok: false, error: st.chk === 'locked' ? 'locked' : 'pin' });
-    var res = { ok: true, roles: st.roles };
-    if (st.roles.indexOf('delivery') > -1) res.orders = deliveries_();
-    if (st.roles.indexOf('packing') > -1) res.pack = packList_();
-    return json_(res);
-  }
   if (p.action === 'coupon') return json_(couponCheck_(p.code, p.phone, Number(p.sub) || 0, p.elig === undefined ? undefined : Number(p.elig) || 0));
   if (p.action === 'bill') return json_(customerBill_(String(p.id || ''), String(p.t || '')));
   var cache = CacheService.getScriptCache(), hit = cache.get('shop');
@@ -497,6 +502,8 @@ function doPost(e) {
     bust_();
     var o = JSON.parse(e.postData.contents);
     if (['delivered', 'start', 'next', 'packed', 'unpack', 'collect', 'uncollect'].indexOf(o.action) > -1) return json_(stage_(o));
+    if (o.action === 'deliveries') return json_(deliveries_view_(o));
+    if (o.action === 'datareq') return json_(dataRequest_(o));
     if (o.action === 'admin') return json_(admin_(o));
     if (o.action === 'partner') return json_(partner_(o));
     return json_(placeOrder_(o));
@@ -505,6 +512,73 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** The Delivery and Packing lists. The PIN comes in the request body, never in the web address, so it stays out of logs and history. */
+function deliveries_view_(o) {
+  var st = staff_(o.pin);
+  if (st.chk !== 'ok') return { ok: false, error: st.chk === 'locked' ? 'locked' : 'pin' };
+  var res = { ok: true, roles: st.roles };
+  if (st.roles.indexOf('delivery') > -1) res.orders = deliveries_();
+  if (st.roles.indexOf('packing') > -1) res.pack = packList_();
+  return res;
+}
+
+// ---------- customers' data requests (delete, show, correct, stop using) ----------
+function dataRequest_(o) {
+  ensureSetup_();
+  var phone = digits10_(o.phone), type = String(o.type || '');
+  if (phone.length !== 10 || DREQ_TYPES.indexOf(type) === -1) return { ok: false, error: 'details' };
+  if (!throttle_('dreq' + phone, 3, 86400)) return { ok: false, error: 'many' };
+  var sh = tab_('Data requests', DREQ_COLS), c = colIndex_(sh), row = sh.getLastRow() + 1, id = 'D' + ('000' + (row - 1)).slice(-3);
+  var vals = { 'Request ID': id, 'Received at': now_(), 'Mobile': phone, 'Name': cap_(o.name, 80), 'Type': type, 'Details': cap_(o.details, 300), 'Status': 'Open' };
+  var out = []; for (var i = 1; i <= sh.getLastColumn(); i++) out.push('');
+  Object.keys(vals).forEach(function (k) { if (c[k]) out[c[k] - 1] = vals[k]; });
+  sh.getRange(row, 1, 1, out.length).setNumberFormat('@').setValues([out]);
+  bust_();
+  return { ok: true, id: id };
+}
+function adminDataRequests_() {
+  var sh = sheet_('Data requests'); if (!sh || sh.getLastRow() < 2) return [];
+  return rows_('Data requests').slice(-60).reverse().map(function (r) {
+    return { id: String(r['request id']), at: String(r['received at']), mobile: String(r['mobile']), name: String(r['name']), type: String(r['type']),
+      details: String(r['details']), status: String(r['status'] || 'Open'), handledAt: String(r['handled at']), handledBy: String(r['handled by']) };
+  });
+}
+/** Clears name, mobile, address, notes and map pin from a customer's finished orders. Order numbers, items and amounts stay, because the bills and accounts must be kept. */
+function eraseCustomer_(o, by) {
+  var phone = digits10_(o.mobile); if (phone.length !== 10) return { ok: false, error: 'bad' };
+  var sh = sheet_('Orders'), c = colIndex_(sh), last = sh.getLastRow(), erased = 0, kept = 0;
+  if (last >= 2) {
+    var v = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getDisplayValues();
+    for (var i = 0; i < v.length; i++) {
+      if (digits10_(v[i][c['Mobile'] - 1]) !== phone) continue;
+      var st = String(v[i][c['Status'] - 1]).trim();
+      if (st !== 'Delivered' && st !== 'Cancelled') { kept++; continue; }
+      var row = i + 2;
+      ['Name', 'Mobile', 'Address', 'Area', 'Notes', 'Map', 'Token'].forEach(function (k) { if (c[k]) sh.getRange(row, c[k]).setNumberFormat('@').setValue(k === 'Name' ? 'Erased' : ''); });
+      erased++;
+    }
+  }
+  var rq = sheet_('Data requests');
+  if (rq && rq.getLastRow() > 1) {
+    var rc = colIndex_(rq), rv = rq.getRange(2, 1, rq.getLastRow() - 1, rq.getLastColumn()).getDisplayValues();
+    for (var j = 0; j < rv.length; j++) {
+      if (digits10_(rv[j][rc['Mobile'] - 1]) === phone && rv[j][rc['Type'] - 1] === 'Delete my data' && rv[j][rc['Status'] - 1] === 'Open' && !kept) {
+        rq.getRange(j + 2, rc['Status']).setValue('Done'); rq.getRange(j + 2, rc['Handled at']).setNumberFormat('@').setValue(now_()); rq.getRange(j + 2, rc['Handled by']).setValue(by);
+      }
+    }
+  }
+  adminLog_(by, 'erased customer data on ' + erased + ' orders' + (kept ? ' (' + kept + ' still active, kept)' : ''));
+  return { ok: true, erased: erased, kept: kept };
+}
+function closeDataRequest_(o, by) {
+  var sh = sheet_('Data requests'), c = colIndex_(sh), row = findRow_(sh, c['Request ID'], String(o.id));
+  if (!row) return { ok: false, error: 'notfound' };
+  var status = o.status === 'Declined' ? 'Declined' : 'Done';
+  sh.getRange(row, c['Status']).setValue(status); sh.getRange(row, c['Handled at']).setNumberFormat('@').setValue(now_()); sh.getRange(row, c['Handled by']).setValue(by);
+  adminLog_(by, 'data request ' + o.id + ' ' + status.toLowerCase());
+  return { ok: true };
 }
 
 /** Rider actions from Blio Delivery: start the round, next stop, delivered. */
@@ -561,12 +635,13 @@ function stage_(o) {
 
 function placeOrder_(o) {
   ensureSetup_();
-  var name = String(o.name || '').trim().slice(0, 80);
+  var name = cap_(o.name, 80);
   var phone = String(o.phone || '').replace(/[^0-9]/g, '').slice(-10);
-  var address = String(o.address || '').trim().slice(0, 300);
-  var area = String(o.area || '').trim().slice(0, 80);
-  var notes = String(o.notes || '').trim().slice(0, 300);
+  var address = cap_(o.address, 300);
+  var area = cap_(o.area, 80);
+  var notes = cap_(o.notes, 300);
   if (!name || phone.length !== 10 || !address) return { ok: false, error: 'details' };
+  if (!throttle_('ord' + phone, 6, 3600)) return { ok: false, error: 'many' };
   if (!o.items || !o.items.length || o.items.length > 30) return { ok: false, error: 'items' };
   var lat = Number(o.lat), lng = Number(o.lng);
   var map = (lat > 6 && lat < 37 && lng > 68 && lng < 98) ? 'https://maps.google.com/?q=' + lat.toFixed(6) + ',' + lng.toFixed(6) : '';
@@ -619,12 +694,13 @@ function placeOrder_(o) {
 
   var values = {
     'Order ID': id, 'Placed at': placed, 'Window': w, 'Name': name, 'Mobile': phone, 'Address': address, 'Area': area,
-    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub - disc + fee, 'Status': 'New', 'Coupon': cpn ? cpn.code : '', 'Discount': disc || '', 'Pay by': payBy, 'Notes': notes, 'Map': map, 'Token': token, 'Payment': 'Unpaid'
+    'Items': summary, 'Subtotal': sub, 'Delivery': fee, 'Total': sub - disc + fee, 'Status': 'New', 'Coupon': cpn ? cpn.code : '', 'Discount': disc || '', 'Pay by': payBy, 'Notes': notes, 'Map': map, 'Token': token, 'Payment': 'Unpaid',
+    'Agreed to': o.agree ? 'Terms and Privacy ' + POLICY_VERSION : ''
   };
   var row = orders.getLastRow() + 1, out = [];
   for (var i = 1; i <= width; i++) out.push('');
   Object.keys(values).forEach(function (k) { if (c[k]) out[c[k] - 1] = values[k]; });
-  ['Order ID', 'Placed at', 'Window', 'Mobile'].forEach(function (k) { if (c[k]) orders.getRange(row, c[k]).setNumberFormat('@'); });
+  ['Order ID', 'Placed at', 'Window', 'Mobile', 'Name', 'Address', 'Area', 'Items', 'Notes', 'Agreed to'].forEach(function (k) { if (c[k]) orders.getRange(row, c[k]).setNumberFormat('@'); });
   ['Subtotal', 'Delivery', 'Total', 'Final amount'].forEach(function (k) { if (c[k]) orders.getRange(row, c[k]).setNumberFormat('"₹"#,##0'); });
   orders.getRange(row, 1, 1, width).setValues([out]);
 
@@ -726,7 +802,7 @@ function adminLoad_() {
   });
   return { ok: true, window: plan.label, plan: plan, orders: adminOrders_(), lots: lots, counts: counts, fish: catalog_(), categories: categories_(true),
     settings: adminSettings_(), coupons: adminCoupons_(), sizes: SIZES, sheetUrl: SpreadsheetApp.getActiveSpreadsheet().getUrl(),
-    partners: adminPartners_() };
+    partners: adminPartners_(), dataRequests: adminDataRequests_() };
 }
 function addLot_(o, by) {
   var cat = {}; catalog_().forEach(function (f) { cat[f.name] = f; });
@@ -928,6 +1004,8 @@ function admin_(o) {
   if (o.op === 'category') return withData(saveCategory_(o, by));
   if (o.op === 'coupon') return withData(saveCoupon_(o, by));
   if (o.op === 'partner') return withData(savePartner_(o, by));
+  if (o.op === 'erasecustomer') return withData(eraseCustomer_(o, by));
+  if (o.op === 'datareq') return withData(closeDataRequest_(o, by));
   if (o.op === 'rotcheck') return { ok: true, flagged: rotationFlagged_(String(o.role), String(o.date)) };
   if (o.op === 'prequest') return withData(saveRequest_(o, by));
   if (o.op === 'shift') return withData(addShift_(o, by));
@@ -1009,7 +1087,8 @@ function admin_(o) {
 
 // ---------- partner pool: delivery and cleaning partners, open requests, shifts and pay ----------
 function digits10_(m) { return String(m || '').replace(/[^0-9]/g, '').slice(-10); }
-function cap_(s, n) { return String(s == null ? '' : s).trim().slice(0, n); }
+/** Trims and shortens free text, and drops leading = + - @ so a sheet never reads typed text as a formula. */
+function cap_(s, n) { return String(s == null ? '' : s).replace(/^[\s=+\-@]+/, '').trim().slice(0, n); }
 function partnerRates_() {
   var n = function (p, d) { var raw = String(setting_(p)).trim(), v = Number(raw); return raw === '' || isNaN(v) ? d : v; };
   return { evening: n('Partner delivery: per evening', 100), drop: n('Partner delivery: per delivery', 15), fuel: n('Partner delivery: fuel per km', 2.1),
