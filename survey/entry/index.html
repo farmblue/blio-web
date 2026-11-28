@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en" data-lang="both">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Survey form entry · Blio</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#12404A">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Work+Sans:wght@400;500;600;700&family=Mukta:wght@400;600&display=swap">
+<link rel="stylesheet" href="/survey/survey.css?v=1">
+<style>
+.wrap{max-width:820px}
+.tabs{display:flex;gap:8px;margin:4px 0 14px}
+.tabs button{flex:1;min-height:44px;border-radius:10px;border:1.5px solid var(--muted-g);background:transparent;color:var(--paper);font:inherit;font-weight:600;cursor:pointer}
+.tabs button[aria-selected=true]{background:var(--paper);color:var(--ground);border-color:var(--paper)}
+.hdr{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.hdr label,.lab{display:block;font-size:13px;color:var(--muted)}
+.card{background:var(--card);color:var(--ink);border-radius:14px;padding:14px;margin-bottom:12px}
+.sec{margin:20px 0 10px;padding:8px 12px;border-left:4px solid var(--action);background:var(--raised);border-radius:0 10px 10px 0;font-weight:700}
+.sec small{display:block;font-weight:400;color:var(--muted-g)}
+.skip{padding:12px 14px;border:1.5px dashed var(--muted-g);border-radius:12px;color:var(--muted-g);margin-bottom:12px}
+.dock{position:fixed;left:0;right:0;bottom:0;background:var(--raised);padding:10px max(16px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));z-index:5;box-shadow:0 -6px 20px rgba(0,0,0,.25)}
+.dock .in{max-width:820px;margin:0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.dock .grow{flex:1;min-width:120px;font-size:14px;color:var(--muted-g)}
+.dock .btn{flex:0 0 auto;min-height:46px;font-size:16px}
+.btn.del{background:transparent;border:1.5px solid #F2A58E;color:#F2A58E}
+body.entering{padding-bottom:110px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 6px;border-bottom:1px solid var(--paper-3);vertical-align:top}
+th{font-size:12px;color:var(--muted)}
+tr.r{cursor:pointer}
+tr.r:hover{background:var(--paper-2)}
+.flag{color:var(--action);font-weight:700}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:90px;background:var(--paper);color:var(--ground);padding:10px 16px;border-radius:99px;font-size:14px;font-weight:600;z-index:9;max-width:90vw}
+.note{padding:10px 12px;border-radius:10px;background:var(--paper);color:var(--warn);font-weight:600;margin:10px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><img src="/icons/wordmark-dark.svg" alt="Blio" width="72" height="36"><div class="grow"></div><span class="muted" id="count"></span></div>
+
+  <section id="login">
+    <h1>Survey form entry</h1>
+    <p class="lead">For typing in the paper survey forms. Enter the entry PIN.</p>
+    <div class="card">
+      <label class="lab" for="pin">Entry PIN</label>
+      <input type="password" id="pin" inputmode="numeric" autocomplete="off">
+      <div id="loginErr" class="note" hidden></div>
+      <div class="nav"><button class="btn" id="go" type="button">Open</button></div>
+    </div>
+  </section>
+
+  <section id="app" hidden>
+    <div class="progress"><i id="bar"></i></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabEnter" aria-selected="true" type="button">Enter a form</button>
+      <button role="tab" id="tabList" aria-selected="false" type="button">Entered forms</button>
+    </div>
+    <div id="status" class="note" hidden></div>
+
+    <div id="viewEnter">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:8px"><strong id="mode">New form</strong><span class="lab">Tick only what is marked on the paper. Leave blank if not answered.</span></div>
+        <div class="hdr">
+          <label>Form no. (you assign)<input type="number" inputmode="numeric" min="1" id="hNo"></label>
+          <label>Date on form<input type="date" id="hDate"></label>
+          <label>Team no.<input type="text" id="hTeam" maxlength="40"></label>
+          <label>Surveyor (सर्वेक्षक)<input type="text" id="hSurveyor" maxlength="80"></label>
+        </div>
+        <div id="dup" class="note" hidden></div>
+      </div>
+      <div id="form"></div>
+      <div class="card">
+        <label class="check" style="margin-top:0"><input type="checkbox" id="hCheck"> Needs a second look (unclear writing, doubtful answer)</label>
+        <label class="lab" style="margin-top:10px">Notes<textarea id="hNotes" rows="2" maxlength="400" placeholder="Anything unclear, or comments written on the form"></textarea></label>
+      </div>
+    </div>
+
+    <div id="viewList" hidden>
+      <div class="card">
+        <input type="text" id="search" placeholder="Search by form no. or area">
+        <p class="lab" id="gaps" style="margin:8px 0 0"></p>
+      </div>
+      <div class="card" style="overflow-x:auto">
+        <table><thead><tr><th>Form</th><th>Area</th><th>Family</th><th>Eats fish</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+        <p class="lab" id="empty" style="margin:10px 0 0">No forms entered yet.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="dock" id="dock" hidden><div class="in">
+  <div class="grow" id="dockMsg"></div>
+  <button class="btn del" id="btnDelete" type="button" hidden>Delete</button>
+  <button class="btn ghost" id="btnClear" type="button">Clear</button>
+  <button class="btn" id="btnSave" type="button">Save &amp; next</button>
+</div></div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="/survey/config.js?v=1"></script>
+<script src="/survey/questions.js?v=2"></script>
+<script src="/survey/form.js?v=1"></script>
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); }, h = SurveyForm.h, TARGET = 200;
+  var PIN = '', rows = [], editing = null, busy = false, hdr = { no: '', date: '', team: '', surveyor: '', notes: '', check: false };
+  try { PIN = sessionStorage.getItem('blio-entry-pin') || ''; } catch (e) {}
+
+  function api(body) {
+    body.pin = PIN;
+    return fetch(SURVEY_API, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); });
+  }
+  function toast(m) { var t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 2400); }
+  function status(m) { $('#status').textContent = m || ''; $('#status').hidden = !m; }
+
+  /* ---------- form ---------- */
+  var formEl = $('#form'), lastSec = null, groups = [], skipNote = h('div', { class: 'skip', hidden: true }, 'Q3 is “No”, so Section A (Q4–Q19) is skipped for this form.');
+  var form, bySec = {};
+  SURVEY.Q.forEach(function (q) { (bySec[q.sec] = bySec[q.sec] || []).push(q); });
+  var forms = [];
+  Object.keys(SURVEY.SECS).forEach(function (s) {
+    formEl.appendChild(h('div', { class: 'sec' }, SURVEY.SECS[s][0], h('small', {}, SURVEY.SECS[s][1])));
+    if (s === 'A') formEl.appendChild(skipNote);
+    var box = h('div', { 'data-sec': s }); formEl.appendChild(box);
+    forms.push({ sec: s, box: box, f: SurveyForm(box, bySec[s], { two: true, code: true, onChange: onChange }) });
+  });
+  function onChange(id) { if (id === 'q3') applySkip(); }
+  function q3() { return forms[0].f.value('q3'); }
+  function applySkip() { var skip = q3() === 'No'; forms[1].box.hidden = skip; skipNote.hidden = !skip; }
+  function answers() { var a = {}; forms.forEach(function (g) { if (g.box.hidden) return; var x = g.f.get(); for (var k in x) a[k] = x[k]; }); return a; }
+  function setAnswers(a) { forms.forEach(function (g) { g.f.set(a); }); applySkip(); }
+
+  function syncHdr() {
+    $('#hNo').value = hdr.no; $('#hDate').value = hdr.date; $('#hTeam').value = hdr.team; $('#hSurveyor').value = hdr.surveyor;
+    $('#hNotes').value = hdr.notes; $('#hCheck').checked = !!hdr.check;
+    $('#mode').textContent = editing ? 'Editing form ' + editing : 'New form';
+    $('#btnDelete').hidden = !editing; $('#btnSave').textContent = editing ? 'Save changes' : 'Save & next';
+    $('#dockMsg').textContent = editing ? '' : (hdr.no ? 'Form ' + hdr.no : 'Enter a form number');
+    $('#dup').hidden = true;
+  }
+  ['No', 'Date', 'Team', 'Surveyor', 'Notes'].forEach(function (k) {
+    $('#h' + k).addEventListener('input', function (e) { hdr[k.toLowerCase()] = e.target.value; if (k === 'No') { $('#dup').hidden = true; if (!editing) $('#dockMsg').textContent = hdr.no ? 'Form ' + hdr.no : 'Enter a form number'; } });
+  });
+  $('#hCheck').addEventListener('change', function (e) { hdr.check = e.target.checked; });
+
+  function nextNo() { var m = 0; rows.forEach(function (r) { if (r.no > m) m = r.no; }); return m + 1; }
+  function newForm() { editing = null; hdr = { no: String(nextNo()), date: '', team: hdr.team, surveyor: hdr.surveyor, notes: '', check: false }; setAnswers({}); syncHdr(); window.scrollTo({ top: 0 }); }
+  function openForm(no) {
+    var r = rows.filter(function (x) { return x.no === no; })[0]; if (!r) return;
+    editing = no; hdr = { no: String(r.no), date: r.date || '', team: r.team || '', surveyor: r.surveyor || '', notes: r.notes || '', check: !!r.check };
+    setAnswers(parse(r.a)); syncHdr(); tab('enter'); window.scrollTo({ top: 0 });
+  }
+  /* sheet cells hold "A; B" for several ticks: turn them back into lists */
+  var types = {}; SURVEY.Q.forEach(function (q) { types[q.id] = q.t; });
+  function parse(a) {
+    var out = {};
+    for (var k in a) {
+      var v = a[k], t = types[k];
+      if (t === 'multi') out[k] = v ? String(v).split('; ') : [];
+      else if (t === 'one') { var p = String(v).split('; '); out[k] = p.length > 1 ? p : v; }
+      else out[k] = v;
+    }
+    return out;
+  }
+
+  /* ---------- tabs and list ---------- */
+  function tab(t) {
+    var e = t === 'enter';
+    $('#viewEnter').hidden = !e; $('#viewList').hidden = e; $('#dock').hidden = !e;
+    $('#tabEnter').setAttribute('aria-selected', e); $('#tabList').setAttribute('aria-selected', !e);
+    if (!e) list();
+  }
+  $('#tabEnter').onclick = function () { tab('enter'); };
+  $('#tabList').onclick = function () { tab('list'); };
+  function count() {
+    $('#count').textContent = rows.length + ' of about ' + TARGET + ' forms';
+    $('#bar').style.width = Math.min(100, Math.round(rows.length / TARGET * 100)) + '%';
+  }
+  function list() {
+    var term = $('#search').value.trim().toLowerCase(), tb = $('#rows'), n = 0; tb.textContent = '';
+    rows.slice().sort(function (a, b) { return a.no - b.no; }).forEach(function (r) {
+      var area = (r.a && r.a.q1) || '';
+      if (term && String(r.no).indexOf(term) < 0 && area.toLowerCase().indexOf(term) < 0) return;
+      n++;
+      tb.appendChild(h('tr', { class: 'r', tabindex: '0', onclick: function () { openForm(r.no); }, onkeydown: function (e) { if (e.key === 'Enter') openForm(r.no); } },
+        h('td', {}, '#' + r.no), h('td', {}, area), h('td', {}, (r.a && r.a.q2) || ''), h('td', {}, (r.a && r.a.q3) || ''),
+        h('td', {}, r.check ? h('span', { class: 'flag', title: 'Needs a second look' }, '⚑') : '')));
+    });
+    $('#empty').hidden = n > 0; $('#empty').textContent = rows.length ? 'No match.' : 'No forms entered yet.';
+    var nums = rows.map(function (r) { return r.no; }), have = {}, gaps = [], max = Math.max.apply(null, nums.concat([0]));
+    nums.forEach(function (x) { have[x] = 1; }); for (var i = 1; i < max; i++) if (!have[i]) gaps.push(i);
+    $('#gaps').textContent = gaps.length ? 'Numbers not entered yet: ' + gaps.slice(0, 40).join(', ') + (gaps.length > 40 ? ' …' : '') : '';
+  }
+  $('#search').addEventListener('input', list);
+
+  function load() {
+    return api({ action: 'list' }).then(function (d) {
+      if (!d.ok) throw d;
+      rows = d.rows || []; count(); status('');
+      if (!$('#viewList').hidden) list();
+    });
+  }
+
+  /* ---------- save / delete ---------- */
+  $('#btnSave').onclick = function () {
+    if (busy) return;
+    var no = parseInt(hdr.no, 10);
+    if (!no || no < 1) { toast('Enter a form number first'); $('#hNo').focus(); return; }
+    var clash = rows.some(function (r) { return r.no === no; });
+    if (clash && editing !== no) {
+      var w = $('#dup'); w.textContent = 'Form ' + no + ' is already entered. ';
+      w.appendChild(h('button', { class: 'btn ghost', type: 'button', style: 'min-height:36px;color:var(--ground);border-color:var(--ground);margin:4px 0', onclick: function () { openForm(no); } }, 'Open it'));
+      w.appendChild(document.createTextNode(' or change the number.')); w.hidden = false; return;
+    }
+    var rec = { no: no, date: hdr.date, team: hdr.team.trim(), surveyor: hdr.surveyor.trim(), notes: hdr.notes.trim(), check: !!hdr.check, a: answers() };
+    busy = true; $('#btnSave').disabled = true;
+    api({ action: 'save', rec: rec, edit: editing }).then(function (d) {
+      if (!d.ok) throw d;
+      toast('Saved form ' + no);
+      rows = rows.filter(function (r) { return r.no !== no && r.no !== editing; }); rows.push(rec); count();
+      newForm(); load().catch(function () {});
+    }).catch(function (e) {
+      if (e && e.error === 'exists') { toast('Form ' + no + ' already exists in the sheet'); load().catch(function () {}); }
+      else if (e && e.error === 'pin') logout('PIN no longer valid. Enter it again.');
+      else toast('Could not save. Check the internet and press Save again.');
+    }).then(function () { busy = false; $('#btnSave').disabled = false; });
+  };
+  var armed = false;
+  $('#btnDelete').onclick = function () {
+    if (!editing || busy) return;
+    if (!armed) { armed = true; $('#btnDelete').textContent = 'Tap again to delete'; setTimeout(function () { armed = false; $('#btnDelete').textContent = 'Delete'; }, 3000); return; }
+    busy = true;
+    api({ action: 'delete', no: editing }).then(function (d) {
+      if (!d.ok) throw d;
+      rows = rows.filter(function (r) { return r.no !== editing; }); count(); toast('Deleted form ' + editing); newForm();
+    }).catch(function () { toast('Could not delete'); })
+      .then(function () { busy = false; armed = false; $('#btnDelete').textContent = 'Delete'; });
+  };
+  $('#btnClear').onclick = function () { if (editing) newForm(); else { setAnswers({}); hdr.notes = ''; hdr.check = false; syncHdr(); } };
+
+  /* ---------- login ---------- */
+  function logout(msg) {
+    PIN = ''; try { sessionStorage.removeItem('blio-entry-pin'); } catch (e) {}
+    $('#app').hidden = true; $('#dock').hidden = true; $('#login').hidden = false; document.body.classList.remove('entering');
+    if (msg) { $('#loginErr').textContent = msg; $('#loginErr').hidden = false; }
+  }
+  function enter() {
+    if (!window.SURVEY_API) { $('#loginErr').textContent = 'The survey backend is not connected yet.'; $('#loginErr').hidden = false; return; }
+    $('#go').disabled = true;
+    load().then(function () {
+      try { sessionStorage.setItem('blio-entry-pin', PIN); } catch (e) {}
+      $('#login').hidden = true; $('#app').hidden = false; document.body.classList.add('entering'); tab('enter'); newForm();
+    }).catch(function (e) {
+      logout(e && e.error === 'pin' ? 'Wrong PIN.' : e && e.error === 'locked' ? 'Too many wrong tries. Wait 10 minutes.' : 'Could not connect. Check the internet and try again.');
+    }).then(function () { $('#go').disabled = false; });
+  }
+  $('#go').onclick = function () { PIN = $('#pin').value.trim(); if (PIN) enter(); };
+  $('#pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('#go').click(); });
+  if (PIN) enter();
+})();
+</script>
+</body>
+</html>

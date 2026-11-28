@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /survey/entry/
 
 Sitemap: https://blio.in/sitemap.xml
