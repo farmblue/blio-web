@@ -35,6 +35,8 @@ const { makeBackend, serve } = require('./survey-server');
   await p.check('#consent'); await p.click('#next');
   await p.waitForSelector('#done:not([hidden])');
   const code = await p.textContent('#code'); assert.ok(/^BL/.test(code));
+  const wa = decodeURIComponent(await p.getAttribute('#share', 'href'));
+  assert.ok(wa.startsWith('https://wa.me/?text=Hello!') && wa.includes('/survey/?src=share'), wa);
   await p.screenshot({ path: '/tmp/claude-0/-home-claude/04aecc8f-1fd6-52ee-83b5-98b2c97d539c/scratchpad/survey/done.png' });
   const col = n => be.sheet.d[0].indexOf(n), row = be.sheet.d[1];
   assert.strictEqual(row[col('q5')], 'Kasba Bawda market'); assert.strictEqual(row[col('q7')], 'Cleanliness; Other'); assert.strictEqual(row[col('q7_other')], 'Proper weighing');

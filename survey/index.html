@@ -75,7 +75,16 @@
       <p class="muted" style="margin:0"><span class="l-mr" lang="mr">हा कोड तुमच्या मोबाईल क्रमांकाशी जोडलेला आहे. Blio अ‍ॅप सुरू झाल्यावर आम्ही तुम्हाला कळवू.</span><span class="l-en" lang="en">This code is linked to your mobile number. We will let you know when the Blio app launches.</span></p>
       <p class="muted" id="dupnote" hidden style="margin:8px 0 0"><span class="l-mr" lang="mr">हा क्रमांक आधीच नोंदवलेला होता, त्यामुळे तुमचा आधीचा कोडच दाखवत आहोत.</span><span class="l-en" lang="en">This number was already registered, so we are showing your earlier code.</span></p>
     </div>
-    <div class="nav"><a class="btn" id="share" href="#" target="_blank" rel="noopener"><span class="l-mr" lang="mr">मित्रांनाही पाठवा</span><span class="l-en" lang="en">Share with friends</span></a></div>
+    <div class="panel">
+      <h2 style="margin-top:0"><span class="l-mr" lang="mr">मित्रांना आणि कुटुंबाला पाठवा</span><span class="l-en" lang="en">Send it to friends and family</span></h2>
+      <p class="muted" style="margin:0"><span class="l-mr" lang="mr">त्यांनाही सर्वेक्षण पूर्ण केल्यावर ₹५० सूट मिळेल.</span><span class="l-en" lang="en">They get ₹50 off too when they finish the survey.</span></p>
+      <div class="nav" style="flex-direction:column">
+        <a class="btn" id="share" href="#" target="_blank" rel="noopener" style="background:#1F8F4E"><span class="l-mr" lang="mr">WhatsApp वर पाठवा</span><span class="l-en" lang="en">Share on WhatsApp</span></a>
+        <button class="btn ghost" id="shareMore" type="button" style="flex:1"><span class="l-mr" lang="mr">इतर मार्गाने पाठवा</span><span class="l-en" lang="en">Other ways to share</span></button>
+        <button class="btn ghost" id="copyLink" type="button" style="flex:1"><span class="l-mr" lang="mr">लिंक कॉपी करा</span><span class="l-en" lang="en">Copy link</span></button>
+      </div>
+      <p class="muted" id="copied" hidden style="margin:8px 0 0"><span class="l-mr" lang="mr">लिंक कॉपी झाली.</span><span class="l-en" lang="en">Link copied.</span></p>
+    </div>
   </section>
 </div>
 
@@ -104,6 +113,7 @@
     document.documentElement.setAttribute('data-lang', l); document.documentElement.lang = l;
     [].forEach.call(document.querySelectorAll('.lang button'), function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-l') === l ? 'true' : 'false'); });
     store.set('blio-survey-lang', l);
+    updateShare();
   }
   [].forEach.call(document.querySelectorAll('.lang button'), function (b) { b.onclick = function () { setLang(b.getAttribute('data-l')); }; });
   var pl = params.get('lang');
@@ -199,8 +209,24 @@
       .then(function () { sending = false; $('#next').disabled = false; });
   }
 
-  var shareText = 'कोल्हापुरात ताजे मासे, फळे आणि भाज्या तुम्ही कशा खरेदी करता? ४-५ मिनिटांचे हे छोटे सर्वेक्षण भरा, शेवटी Blio कडून ₹५० सूट! https://blio.in/survey/?src=share';
-  $('#share').href = 'https://wa.me/?text=' + encodeURIComponent(shareText);
+  /* sharing: forwarded links carry src=share, so the sheet shows how many answers came from forwards */
+  var shareSrc = 'share';
+  function shareUrl() { var l = document.documentElement.lang; return 'https://blio.in/survey/?src=' + shareSrc + (l === 'mr' ? '&lang=mr' : ''); }
+  function shareText() {
+    return document.documentElement.lang === 'mr'
+      ? 'नमस्कार! कोल्हापुरात ताजे मासे, फळे आणि भाज्या तुम्ही कशा खरेदी करता? फक्त ४-५ मिनिटांचे छोटे सर्वेक्षण भरा आणि Blio अ‍ॅप सुरू झाल्यावर पहिल्या ऑर्डरवर ₹५० सूट मिळवा. 🐟🥬'
+      : 'Hello! How do you buy fresh fish, fruits and vegetables in Kolhapur? Take this 4–5 minute survey and get ₹50 off your first order when the Blio app launches. 🐟🥬';
+  }
+  function updateShare() { if (shareSrc) $('#share').href = 'https://wa.me/?text=' + encodeURIComponent(shareText() + '\n\n' + shareUrl()); }
+  updateShare();
+  if (!navigator.share) $('#shareMore').hidden = true;
+  $('#shareMore').onclick = function () { navigator.share({ title: 'Blio survey', text: shareText(), url: shareUrl() }).catch(function () {}); };
+  $('#copyLink').onclick = function () {
+    var done = function () { $('#copied').hidden = false; };
+    var manual = function () { var c = $('#copied'); c.textContent = shareUrl(); c.style.userSelect = 'all'; c.hidden = false; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareText() + '\n' + shareUrl()).then(done, manual);
+    else manual();
+  };
 })();
 </script>
 </body>
