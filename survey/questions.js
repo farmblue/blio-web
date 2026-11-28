@@ -28,8 +28,8 @@
     { id: 'q11', sec: 'A', t: 'one', step: 2, req: 1, mr: 'आठवड्याला तुमच्या घरी माशांवर एकूण किती खर्च होतो?', en: 'How much does your home spend on fish in a week?', o: SPEND },
     { id: 'q12', sec: 'A', t: 'multi', step: 2, mr: 'समुद्रातील (खाऱ्या पाण्यातील) कोणते मासे तुम्हाला जास्त आवडतात?', en: 'Which sea fish do you like most?', o: [O('Pomfret', 'पापलेट'), O('Surmai / Kingfish', 'सुरमई'), O('Bombil / Bombay duck', 'बोंबील'), O('Bangda / Mackerel', 'बांगडा'), O('Prawns', 'कोळंबी (झिंगे)'), O('Rawas / Indian salmon', 'रावस'), O('Crab', 'खेकडा'), O('Clams / shellfish', 'तिसऱ्या (शिंपले)'), O('Other', 'इतर')] },
     { id: 'q13', sec: 'A', t: 'multi', step: 2, mr: 'गोड्या पाण्यातील कोणते मासे तुम्हाला मिळतात किंवा आवडतात?', en: 'Which freshwater fish do you get or like?', o: [O('Rohu', 'रोहू'), O('Katla', 'कतला'), O('Mrigal', 'मृगळ'), O('Silver carp', 'सिल्व्हर कार्प'), O('Local river fish (e.g. Panchganga)', 'स्थानिक नदीतील मासे (उदा. पंचगंगा)'), O('Mangur / Shingti (catfish)', 'मांगूर / शिंगटी (कॅटफिश)'), O('Other', 'इतर')] },
-    { id: 'q14', sec: 'A', t: 'one', step: 2, req: 1, mr: 'शेतात (तळ्यात) वाढवलेला मड क्रॅब — गडद / काळ्या रंगाचा, मोठा आणि भरपूर मांस असलेला खेकडा, ज्याला स्थानिक बाजारात आणि परदेशातही मोठी मागणी आहे — तुम्हाला खाऊन पाहायला आवडेल का?', en: 'Farm-raised mud crab is the large, dark (black) crab with lots of meat, in big demand both locally and abroad. Would you like to try it?', o: TRY },
-    { id: 'q15', sec: 'A', t: 'one', step: 2, req: 1, mr: 'फार्ममध्ये वाढवलेला तिलापिया मासा — सौम्य चवीचा, कमी काट्यांचा गोड्या पाण्यातला मासा (काही ठिकाणी ‘चायनीज मासा’) — तुम्हाला खाऊन पाहायला आवडेल का?', en: 'Farm-raised tilapia is a mild, low-bone freshwater fish (sometimes called "Chinese fish"). Would you like to try it?', o: TRY },
+    { id: 'q14', sec: 'A', t: 'one', step: 2, req: 1, mr: 'शेतात (तळ्यात) वाढवलेला मड क्रॅब म्हणजे गडद / काळ्या रंगाचा, मोठा आणि भरपूर मांस असलेला खेकडा. त्याला स्थानिक बाजारात आणि परदेशातही मोठी मागणी आहे. तुम्हाला खाऊन पाहायला आवडेल का?', en: 'Farm-raised mud crab is the large, dark (black) crab with lots of meat, in big demand both locally and abroad. Would you like to try it?', o: TRY },
+    { id: 'q15', sec: 'A', t: 'one', step: 2, req: 1, mr: 'फार्ममध्ये वाढवलेला तिलापिया हा सौम्य चवीचा, कमी काट्यांचा गोड्या पाण्यातला मासा आहे (काही ठिकाणी ‘चायनीज मासा’). तुम्हाला खाऊन पाहायला आवडेल का?', en: 'Farm-raised tilapia is a mild, low-bone freshwater fish (sometimes called "Chinese fish"). Would you like to try it?', o: TRY },
     { id: 'q16', sec: 'A', t: 'one', step: 2, req: 1, mr: 'स्वच्छ करून, तुमच्या गरजेनुसार कापून दिलेले ताजे मासे घरपोच मिळाले, तर तुम्हाला आवडेल का?', en: 'Would you like fresh fish, cleaned and cut the way you want, delivered home?', o: [O('Yes, definitely', 'हो, नक्कीच'), O('Maybe', 'कदाचित'), O('No', 'नाही')] },
     { id: 'q17', sec: 'A', t: 'one', step: 2, req: 1, mr: 'या सोयीसाठी सध्याच्या भावापेक्षा तुम्ही किती जास्त पैसे द्यायला तयार असाल?', en: 'For that, how much more than today\'s price would you pay?', o: EXTRA },
     { id: 'q18', sec: 'A', t: 'multi', mr: 'आठवड्यातल्या कोणत्या वारी तुमच्या घरी मासे / मांसाहार खाल्ला जात नाही?', en: 'On which days is no fish or meat eaten at home?', o: DAYS },
@@ -49,7 +49,7 @@
     { id: 'q32', sec: 'C', t: 'multi', step: 4, req: 1, mr: 'यापैकी कोणत्या सेवेवरून तुम्ही प्रत्यक्ष किमान एकदा तरी ऑर्डर केली आहे?', en: 'Which of these have you actually ordered from at least once?', o: SERV },
     { id: 'q33', sec: 'C', t: 'one', step: 4, mr: 'यापैकी एखादी सेवा वापरली असेल, तर ती तुम्ही अजूनही नियमितपणे वापरता का?', en: 'If you have used one, do you still use it regularly?', o: [O('Yes, regularly', 'हो, नियमितपणे'), O('Sometimes', 'कधीकधी'), O('No, stopped using', 'नाही, वापरणे बंद केले'), O('Never used any of them', 'यापैकी कोणतीही कधीच वापरली नाही')] },
     { id: 'q34', sec: 'C', t: 'text', ml: 1, step: 4, mr: 'तुम्ही ती सेवा वापरणे बंद केले असेल किंवा क्वचितच वापरत असाल, तर त्याचे कारण काय?', en: 'If you stopped or rarely use it, why?', ph: 'ऐच्छिक / optional' },
-    { id: 'q35', sec: 'C', t: 'one', mr: 'एकंदरीत, कोल्हापुरात ताजे मासे आणि फळे-भाज्या मिळण्याच्या सध्याच्या सोयींबद्दल तुम्ही किती समाधानी आहात?', en: 'Overall, how satisfied are you with getting fresh fish, fruits and vegetables in Kolhapur?', o: [O('1 - Not at all satisfied', '१ — अजिबात समाधानी नाही'), O('2 - Not satisfied', '२ — समाधानी नाही'), O('3 - OK', '३ — ठीक आहे'), O('4 - Satisfied', '४ — समाधानी'), O('5 - Very satisfied', '५ — खूप समाधानी')] },
+    { id: 'q35', sec: 'C', t: 'one', mr: 'एकंदरीत, कोल्हापुरात ताजे मासे आणि फळे-भाज्या मिळण्याच्या सध्याच्या सोयींबद्दल तुम्ही किती समाधानी आहात?', en: 'Overall, how satisfied are you with getting fresh fish, fruits and vegetables in Kolhapur?', o: [O('1 - Not at all satisfied', '१ - अजिबात समाधानी नाही'), O('2 - Not satisfied', '२ - समाधानी नाही'), O('3 - OK', '३ - ठीक आहे'), O('4 - Satisfied', '४ - समाधानी'), O('5 - Very satisfied', '५ - खूप समाधानी')] },
     { id: 'q36', sec: 'D', t: 'one', mr: 'सध्या तुम्हाला किराणा किंवा खाण्याचे पदार्थ घरपोच मिळतात का?', en: 'Do you get groceries or food delivered home now?', o: [O('Regularly', 'नियमितपणे'), O('Sometimes', 'कधीकधी'), O('Never', 'कधीच नाही')] },
     { id: 'q37', sec: 'D', t: 'one', step: 4, req: 1, mr: 'ताजे मासे आणि / किंवा फळे-भाज्या मागवण्यासाठी खास मोबाईल अ‍ॅप वापरायला तुम्हाला आवडेल का?', en: 'Would you use a mobile app to order fresh fish and/or fruits and vegetables?', o: YMN },
     { id: 'q38', sec: 'D', t: 'one', step: 4, req: 1, mr: 'प्रत्येक वेळी वेगळी ऑर्डर देण्याऐवजी साप्ताहिक किंवा मासिक योजना (ठरलेल्या वस्तू नियमितपणे घरपोच) तुम्हाला आवडेल का?', en: 'Instead of ordering each time, would you like a weekly or monthly plan (fixed items delivered regularly)?', o: [O('Weekly plan', 'साप्ताहिक योजना'), O('Monthly plan', 'मासिक योजना'), O('Only occasional separate orders', 'फक्त वेळोवेळी स्वतंत्र ऑर्डर'), O('Not interested', 'रस नाही')] },
@@ -65,12 +65,12 @@
   ];
 
   var SECS = {
-    '0': ['विभाग 0 — तुमच्या कुटुंबाविषयी', 'Section 0 — About your family'],
-    'A': ['विभाग अ — मासे खरेदीच्या सवयी', 'Section A — Fish (only if Q3 is Yes)'],
-    'B': ['विभाग ब — फळे आणि भाज्या', 'Section B — Fruits and vegetables'],
-    'C': ['विभाग क — सध्याच्या घरपोच सेवा', 'Section C — Current delivery services'],
-    'D': ['विभाग ड — घरपोच सेवा आणि अ‍ॅपबद्दल आवड', 'Section D — Interest in delivery and an app'],
-    'E': ['विभाग ड — तुमच्याबद्दल थोडेसे', 'About the respondent (printed as another “विभाग ड”)']
+    '0': ['विभाग 0: तुमच्या कुटुंबाविषयी', 'Section 0: About your family'],
+    'A': ['विभाग अ: मासे खरेदीच्या सवयी', 'Section A: Fish (only if Q3 is Yes)'],
+    'B': ['विभाग ब: फळे आणि भाज्या', 'Section B: Fruits and vegetables'],
+    'C': ['विभाग क: सध्याच्या घरपोच सेवा', 'Section C: Current delivery services'],
+    'D': ['विभाग ड: घरपोच सेवा आणि अ‍ॅपबद्दल आवड', 'Section D: Interest in delivery and an app'],
+    'E': ['विभाग ड: तुमच्याबद्दल थोडेसे', 'About the respondent (printed as another “विभाग ड”)']
   };
 
   window.SURVEY = { Q: Q, SECS: SECS, SKIP_IF_NO: Q.filter(function (q) { return q.sec === 'A'; }).map(function (q) { return q.id; }) };

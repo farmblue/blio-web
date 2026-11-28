@@ -36,9 +36,9 @@
           wrap.appendChild(b); return { v: o.v, el: b };
         });
         body.appendChild(wrap);
-        if (opts.two && q.t === 'one') { warns[q.id] = h('div', { class: 'q-warn', hidden: true }, '⚠ More than one box is ticked on the paper — both are saved.'); body.appendChild(warns[q.id]); }
+        if (opts.two && q.t === 'one') { warns[q.id] = h('div', { class: 'q-warn', hidden: true }, '⚠ More than one box is ticked on the paper. Both are saved.'); body.appendChild(warns[q.id]); }
         if (q.o.some(function (o) { return o.v === 'Other'; })) {
-          others[q.id] = h('input', { type: 'text', class: 'other', hidden: true, maxlength: 200, placeholder: 'इतर — लिहा / Other — please write',
+          others[q.id] = h('input', { type: 'text', class: 'other', hidden: true, maxlength: 200, placeholder: 'इतर: लिहा / Other: please write',
             oninput: function (e) { a[q.id + '_other'] = e.target.value; changed(q); } });
           body.appendChild(others[q.id]);
         }

@@ -118,7 +118,7 @@ tr.r:hover{background:var(--paper-2)}
   function status(m) { $('#status').textContent = m || ''; $('#status').hidden = !m; }
 
   /* ---------- form ---------- */
-  var formEl = $('#form'), lastSec = null, groups = [], skipNote = h('div', { class: 'skip', hidden: true }, 'Q3 is “No”, so Section A (Q4–Q19) is skipped for this form.');
+  var formEl = $('#form'), lastSec = null, groups = [], skipNote = h('div', { class: 'skip', hidden: true }, 'Q3 is “No”, so Section A (Q4-Q19) is skipped for this form.');
   var form, bySec = {};
   SURVEY.Q.forEach(function (q) { (bySec[q.sec] = bySec[q.sec] || []).push(q); });
   var forms = [];
