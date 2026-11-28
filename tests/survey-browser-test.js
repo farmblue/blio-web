@@ -54,6 +54,9 @@ const { makeBackend, serve } = require('./survey-server');
   assert.ok(await p2.isHidden('#codebox'));
   assert.strictEqual(ON().d[2][col('q4')], '');
   await p2.reload(); assert.ok(await p2.isVisible('#already'));
+  await p2.click('#already .anotherBtn'); await p2.waitForURL('**/survey/?again');
+  assert.ok(await p2.isVisible('#start')); assert.ok(await p2.isHidden('#already'));
+  await p2.click('#start'); assert.strictEqual(await p2.inputValue('[data-q=q1] input'), '', 'fresh form');
   // ---- entry page
   const e = await b.newPage({ viewport: { width: 1100, height: 900 } }); e.on('pageerror', x => errs.push(x.message));
   await e.goto(base + '/survey/entry/');

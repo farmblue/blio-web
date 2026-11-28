@@ -39,6 +39,8 @@
     <div id="already" class="panel" hidden>
       <p><span class="l-mr" lang="mr">तुम्ही हे सर्वेक्षण आधीच भरले आहे. धन्यवाद!</span><span class="l-en" lang="en">You have already filled this survey. Thank you!</span></p>
       <p id="alreadyCode" class="muted"></p>
+      <p class="muted" style="margin:0"><span class="l-mr" lang="mr">घरातील दुसरी व्यक्ती याच फोनवरून भरू शकते.</span><span class="l-en" lang="en">Someone else at home can fill it on this phone.</span></p>
+      <button class="btn ghost anotherBtn" type="button" style="flex:1;margin-top:12px;width:100%"><span class="l-mr" lang="mr">दुसऱ्या व्यक्तीसाठी भरा</span><span class="l-en" lang="en">Fill for another person</span></button>
     </div>
     <div class="nav"><button class="btn" id="start" type="button"><span class="l-mr" lang="mr">सुरू करा</span><span class="l-en" lang="en">Start</span></button></div>
     <p class="foot">Farmblue Agrotech Pvt. Ltd. · Blio · <a href="/privacy" target="_blank" rel="noopener">Privacy</a></p>
@@ -85,6 +87,7 @@
       </div>
       <p class="muted" id="copied" hidden style="margin:8px 0 0"><span class="l-mr" lang="mr">लिंक कॉपी झाली.</span><span class="l-en" lang="en">Link copied.</span></p>
     </div>
+    <button class="btn ghost anotherBtn" type="button" style="flex:1;margin-top:12px;width:100%"><span class="l-mr" lang="mr">दुसऱ्या व्यक्तीसाठी भरा</span><span class="l-en" lang="en">Fill for another person</span></button>
   </section>
 </div>
 
@@ -126,6 +129,10 @@
     if (prev.code) $('#alreadyCode').textContent = 'Code: ' + prev.code;
     $('#start').hidden = true;
   }
+  /* another person on the same phone: fresh, empty survey (the one-code-per-mobile rule still applies) */
+  [].forEach.call(document.querySelectorAll('.anotherBtn'), function (b) {
+    b.onclick = function () { store.del('blio-survey-draft'); location.replace(location.pathname + '?again'); };
+  });
 
   if (!window.SURVEY_API) {
     $('#start').hidden = true;
