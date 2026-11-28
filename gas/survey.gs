@@ -15,7 +15,7 @@ var QCOLS = ['q1', 'q2', 'q3', 'q4', 'q4_other', 'q5', 'q6', 'q6_other', 'q7', '
   'q40', 'q41', 'q41_other', 'q42', 'q43', 'q44', 'q45', 'q46', 'q46_other', 'q47', 'q47_other'];
 var OFFLINE_COLS = ['form_no', 'date', 'team', 'surveyor'].concat(QCOLS, ['needs_check', 'notes', 'submitted_at']);
 /* the questions the online survey asks, in the order it asks them */
-var ONLINE_Q = ['q1', 'q2', 'q42', 'q3', 'q4', 'q4_other', 'q5', 'q6', 'q6_other', 'q7', 'q7_other', 'q9', 'q11', 'q12', 'q12_other', 'q13', 'q13_other',
+var ONLINE_Q = ['q1', 'q2', 'q42', 'q3', 'q4', 'q4_other', 'q5', 'q6', 'q6_other', 'q7', 'q7_other', 'q9', 'q11', 'q18', 'q19', 'q19_other', 'q12', 'q12_other', 'q13', 'q13_other',
   'q14', 'q15', 'q16', 'q17', 'q20', 'q20_other', 'q21', 'q23', 'q23_other', 'q27', 'q29', 'q32', 'q32_other', 'q33', 'q34', 'q37', 'q38', 'q45'];
 var ONLINE_COLS = ['submitted_at', 'src', 'lang', 'seconds', 'needs_check'].concat(ONLINE_Q, ['q44', 'consent', 'reward_code']);
 var CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
