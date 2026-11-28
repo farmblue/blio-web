@@ -21,7 +21,8 @@ nav{display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);margin
 </head>
 <body>
 <main>
-<p><a href="/">&larr; Back to Blio</a></p>
+<p><a href="/" id="back">&larr; Back to Blio</a></p>
+<script>if (/\/survey/.test(document.referrer)) { var b = document.getElementById("back"); b.href = "/survey/"; b.textContent = "\u2190 Back to the survey"; }</script>
 <h1>Privacy Policy</h1>
 <p class="meta">Last updated: 5 November 2026</p>
 <p>Blio is a brand of Farmblue Agrotech Private Limited ("we", "us"), House No 1328, A/p Harkul, Khalachi Teliwadi, Kankavli, Sindhudurg 416602, Maharashtra. This page explains what personal data we collect when you order fish from Blio, why we collect it, and your choices. We follow India's Digital Personal Data Protection Act, 2023.</p>
