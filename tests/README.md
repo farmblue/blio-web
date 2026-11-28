@@ -7,3 +7,5 @@ Browser tests (Playwright for Python): `python3 tests/test5.py`, `test7.py`, `te
 Script-level tests: `node tests/gs-test5.js`, `gs-test8.js`.
 
 Test pages load fonts from `tests/fonts/node_modules/@fontsource` (run `npm i @fontsource/<font>` in tests/fonts if needed; the tests still run without them).
+
+Survey (blio.in/survey and /survey/entry, backend gas/survey.gs): `node tests/survey-gs-test.js` (script level) and `node tests/survey-browser-test.js` (both pages, starts its own mock on :8811). `node tests/survey-server.js` serves a mock on :8810 for trying the pages by hand (entry PIN 4321).
