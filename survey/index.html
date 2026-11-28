@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="mr" data-lang="mr">
+<html lang="en" data-lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -27,8 +27,8 @@
     <img src="/icons/wordmark-dark.svg" alt="Blio" width="72" height="36">
     <div class="grow"></div>
     <div class="lang" role="group" aria-label="Language">
-      <button type="button" data-l="mr" aria-pressed="true" lang="mr">मराठी</button>
-      <button type="button" data-l="en" aria-pressed="false" lang="en">English</button>
+      <button type="button" data-l="mr" aria-pressed="false" lang="mr">मराठी</button>
+      <button type="button" data-l="en" aria-pressed="true" lang="en">English</button>
     </div>
   </div>
 
@@ -52,7 +52,7 @@
     <div id="rewardbox" hidden>
       <div class="panel">
         <h2 style="margin-top:0"><span class="l-mr" lang="mr">तुमची भेट: ₹५० सूट</span><span class="l-en" lang="en">Your gift: ₹50 off</span></h2>
-        <p><span class="l-mr" lang="mr">Blio अ‍ॅप सुरू झाल्यावर तुमच्या पहिल्या ₹३०० पेक्षा जास्त ऑर्डरवर ₹५० सूट हवी असल्यास तुमचा मोबाईल क्रमांक द्या. (ऐच्छिक)</span><span class="l-en" lang="en">For ₹50 off your first Blio order above ₹300 when the app launches, leave your mobile number. (Optional)</span></p>
+        <p><span class="l-mr" lang="mr">Blio अ‍ॅप सुरू झाल्यावर तुमच्या पहिल्या ₹३०० पेक्षा जास्त ऑर्डरवर ₹५० सूट हवी असल्यास तुमचा मोबाईल क्रमांक द्या.</span><span class="l-en" lang="en">For ₹50 off your first Blio order above ₹300 when the app launches, leave your mobile number.</span></p>
         <input type="tel" id="mobile" inputmode="numeric" autocomplete="tel" maxlength="14" placeholder="98xxxxxxxx" aria-label="Mobile number">
         <label class="check"><input type="checkbox" id="consent"><span><span class="l-mr" lang="mr">Blio सुरू झाल्यावर मला याच क्रमांकावर SMS / WhatsApp द्वारे कळवले तरी चालेल. माझा क्रमांक फक्त या सर्वेक्षणासाठी आणि Blio सुरू झाल्याची माहिती देण्यासाठी वापरला जाईल.</span><span class="l-en" lang="en">Blio may contact me on this number by SMS / WhatsApp when it launches. My number is used only for this survey and the Blio launch.</span></span></label>
         <p class="terms"><span class="l-mr" lang="mr">अटी: फक्त पहिल्या ऑर्डरवर, किमान ऑर्डर ₹३००, अ‍ॅप सुरू झाल्यापासून ३ महिने वैध, फक्त कोल्हापूर डिलिव्हरी क्षेत्रात, एका मोबाईल क्रमांकाला एकदाच.</span><span class="l-en" lang="en">Terms: first order only, minimum order ₹300, valid for 3 months after the app launches, Kolhapur delivery area only, once per mobile number.</span></p>
@@ -80,7 +80,7 @@
 </div>
 
 <script src="/survey/config.js?v=1"></script>
-<script src="/survey/questions.js?v=1"></script>
+<script src="/survey/questions.js?v=2"></script>
 <script src="/survey/form.js?v=1"></script>
 <script>
 (function () {
@@ -106,7 +106,8 @@
     store.set('blio-survey-lang', l);
   }
   [].forEach.call(document.querySelectorAll('.lang button'), function (b) { b.onclick = function () { setLang(b.getAttribute('data-l')); }; });
-  setLang(params.get('lang') === 'en' ? 'en' : (store.get('blio-survey-lang') || 'mr'));
+  var pl = params.get('lang');
+  setLang(pl === 'mr' || pl === 'en' ? pl : (store.get('blio-survey-lang') || 'en'));
 
   /* already done? */
   var prev = null; try { prev = JSON.parse(store.get('blio-survey-done') || 'null'); } catch (e) {}

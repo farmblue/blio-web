@@ -8,7 +8,7 @@ const { makeBackend, serve } = require('./survey-server');
   const p = await b.newPage({ viewport: { width: 390, height: 844 } });
   p.on('pageerror', e => errs.push(e.message));
   // ---- public survey, someone who eats fish
-  await p.goto(base + '/survey/?src=college');
+  await p.goto(base + '/survey/?src=college&lang=mr');
   await p.click('#start');
   await p.click('#next');                                   // nothing answered
   assert.ok(await p.isVisible('[data-q=q1] .q-err'), 'required shown');
@@ -41,7 +41,7 @@ const { makeBackend, serve } = require('./survey-server');
   assert.strictEqual(row[col('src')], 'college'); assert.strictEqual(row[col('q9')], '2-3'); assert.strictEqual(row[col('lang')], 'en');
   // ---- vegetarian: fish step skipped, no mobile
   const p2 = await b.newPage({ viewport: { width: 390, height: 844 } }); p2.on('pageerror', e => errs.push(e.message));
-  await p2.goto(base + '/survey/');
+  await p2.goto(base + '/survey/?lang=mr');
   await p2.click('#start'); await p2.fill('[data-q=q1] input', 'Tarabai Park');
   await p2.click('[data-q=q2] .opt >> nth=0'); await p2.click('[data-q=q42] .opt >> nth=0'); await p2.click('[data-q=q3] .opt >> nth=1');
   await p2.click('#next'); assert.strictEqual((await p2.innerText('#steptitle')).trim(), 'फळे आणि भाज्या');
@@ -77,7 +77,7 @@ const { makeBackend, serve } = require('./survey-server');
   const off2 = be.sheet.d.find(r => r[col('source')] === 'offline');
   assert.strictEqual(off2[col('q3')], 'No'); assert.strictEqual(off2[col('q8')], '');
   await e.screenshot({ path: '/tmp/claude-0/-home-claude/04aecc8f-1fd6-52ee-83b5-98b2c97d539c/scratchpad/survey/entry.png' });
-  const p3 = await b.newPage({ viewport: { width: 390, height: 844 } }); await p3.goto(base + '/survey/'); await p3.screenshot({ path: '/tmp/claude-0/-home-claude/04aecc8f-1fd6-52ee-83b5-98b2c97d539c/scratchpad/survey/start.png' });
+  const p3 = await b.newPage({ viewport: { width: 390, height: 844 } }); await p3.goto(base + '/survey/'); assert.strictEqual(await p3.getAttribute('html', 'data-lang'), 'en', 'English by default'); await p3.screenshot({ path: '/tmp/claude-0/-home-claude/04aecc8f-1fd6-52ee-83b5-98b2c97d539c/scratchpad/survey/start.png' });
   await p3.click('#start'); await p3.screenshot({ path: '/tmp/claude-0/-home-claude/04aecc8f-1fd6-52ee-83b5-98b2c97d539c/scratchpad/survey/step1.png' });
   assert.deepStrictEqual(errs, []);
   console.log('survey browser tests passed'); await b.close(); srv.close();
