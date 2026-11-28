@@ -21,7 +21,7 @@ const { makeBackend, serve } = require('./survey-server');
   assert.ok(await p.isVisible('[data-q=q7] input.other')); await p.fill('[data-q=q7] input.other', 'Proper weighing');
   await p.click('#next'); assert.ok(await p.isVisible('[data-q=q18] .q-err'), 'days question required');
   for (const q of ['q9', 'q11', 'q14', 'q15', 'q16', 'q17']) await p.click(`[data-q=${q}] .opt >> nth=0`);
-  await p.click('[data-q=q18] .opt >> nth=0'); await p.click('[data-q=q18] .opt >> nth=3'); await p.click('[data-q=q19] .opt >> nth=1');
+  await p.click('[data-q=q48] .opt >> nth=2'); await p.click('[data-q=q48] .opt >> nth=6'); await p.click('[data-q=q18] .opt >> nth=0'); await p.click('[data-q=q18] .opt >> nth=3'); await p.click('[data-q=q19] .opt >> nth=1');
   await p.click('[data-q=q9] .opt >> nth=1');               // single choice: replaces
   assert.strictEqual(await p.locator('[data-q=q9] [aria-pressed=true]').count(), 1);
   await p.click('#next');
@@ -42,7 +42,7 @@ const { makeBackend, serve } = require('./survey-server');
   await p.screenshot({ path: '/tmp/claude-0/-home-claude/04aecc8f-1fd6-52ee-83b5-98b2c97d539c/scratchpad/survey/done.png' });
   const ON = () => be.tab('Online'), OFF = () => be.tab('Offline'), col = n => ON().d[0].indexOf(n), ocol = n => OFF().d[0].indexOf(n), row = ON().d[1];
   assert.strictEqual(row[col('q5')], 'Kasba Bawda market'); assert.strictEqual(row[col('q7')], 'Cleanliness; Other'); assert.strictEqual(row[col('q7_other')], 'Proper weighing');
-  assert.strictEqual(row[col('q18')], 'Monday; Thursday'); assert.strictEqual(row[col('q19')], 'Shravan month'); assert.strictEqual(row[col('src')], 'college'); assert.strictEqual(row[col('q9')], '2-3'); assert.strictEqual(row[col('lang')], 'en');
+  assert.strictEqual(row[col('q48')], 'Wednesday; Sunday'); assert.strictEqual(row[col('q11')], 'Under 200'); assert.strictEqual(row[col('q18')], 'Monday; Thursday'); assert.strictEqual(row[col('q19')], 'Shravan month'); assert.strictEqual(row[col('src')], 'college'); assert.strictEqual(row[col('q9')], '2-3'); assert.strictEqual(row[col('lang')], 'en');
   // ---- vegetarian: fish step skipped, no mobile
   const p2 = await b.newPage({ viewport: { width: 390, height: 844 } }); p2.on('pageerror', e => errs.push(e.message));
   await p2.goto(base + '/survey/?lang=mr');
