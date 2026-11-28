@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+/* Until launch, blio.in shows a coming-soon page. The team opens the app once with ?preview=blio-team (remembered on that device); ?preview=off forgets it. */
+(function () {
+  var q = new URLSearchParams(location.search).get('preview'), k = 'blio-preview', ok = false;
+  try { if (q === 'blio-team') localStorage.setItem(k, '1'); if (q === 'off') localStorage.removeItem(k); ok = localStorage.getItem(k) === '1'; } catch (e) { ok = q === 'blio-team'; }
+  if (!ok) { document.documentElement.style.display = 'none'; location.replace('/soon/'); }
+})();
+</script>
 <title>Blio · Fresh seafood in Kolhapur</title>
 <meta name="description" content="Fresh fish, prawns and crab bought at the harbour in Goa and on the Konkan coast. Order by 3 PM for delivery in Kolhapur the same evening.">
 <meta name="theme-color" content="#12404A">
