@@ -5,30 +5,36 @@ const ROOT = path.join(__dirname, '..');
 
 function makeBackend(opts) {
   opts = opts || {};
-  const sheet = { d: (opts.rows || []).map(r => r.slice()), maxCols: opts.maxCols || 68 };
-  const S = {
-    getLastRow: () => sheet.d.length,
-    getLastColumn: () => Math.max(0, ...sheet.d.map(r => { let n = r.length; while (n && (r[n - 1] === '' || r[n - 1] == null)) n--; return n; })),
-    getMaxColumns: () => sheet.maxCols,
-    insertColumnsAfter: (c, n) => { sheet.maxCols += n; },
-    setFrozenRows() {},
-    deleteRow: r => { sheet.d.splice(r - 1, 1); },
-    getRange(r, c, nr, nc) {
-      nr = nr || 1; nc = nc || 1;
-      if (c + nc - 1 > sheet.maxCols) throw new Error('out of columns');
-      const ensure = () => { while (sheet.d.length < r + nr - 1) sheet.d.push([]); for (let i = 0; i < nr; i++) while (sheet.d[r - 1 + i].length < c + nc - 1) sheet.d[r - 1 + i].push(''); };
-      const rg = {
-        getValues() { ensure(); return sheet.d.slice(r - 1, r - 1 + nr).map(row => row.slice(c - 1, c - 1 + nc)); },
-        setValues(v) { ensure(); v.forEach((row, i) => row.forEach((x, j) => { sheet.d[r - 1 + i][c - 1 + j] = x; })); return rg; },
-        setNumberFormat() { return rg; }, setFontWeight() { return rg; }
-      };
-      return rg;
-    }
-  };
+  function makeSheet(rows, maxCols) {
+    const sheet = { d: (rows || []).map(r => r.slice()), maxCols: maxCols || 26 };
+    const S = {
+      d: sheet.d,
+      getLastRow: () => sheet.d.length,
+      getLastColumn: () => Math.max(0, ...sheet.d.map(r => { let n = r.length; while (n && (r[n - 1] === '' || r[n - 1] == null)) n--; return n; })),
+      getMaxColumns: () => sheet.maxCols,
+      insertColumnsAfter: (c, n) => { sheet.maxCols += n; },
+      setFrozenRows() {},
+      deleteRow: r => { sheet.d.splice(r - 1, 1); },
+      getRange(r, c, nr, nc) {
+        nr = nr || 1; nc = nc || 1;
+        if (c + nc - 1 > sheet.maxCols) throw new Error('out of columns');
+        const ensure = () => { while (sheet.d.length < r + nr - 1) sheet.d.push([]); for (let i = 0; i < nr; i++) while (sheet.d[r - 1 + i].length < c + nc - 1) sheet.d[r - 1 + i].push(''); };
+        const rg = {
+          getValues() { ensure(); return sheet.d.slice(r - 1, r - 1 + nr).map(row => row.slice(c - 1, c - 1 + nc)); },
+          setValues(v) { ensure(); v.forEach((row, i) => row.forEach((x, j) => { sheet.d[r - 1 + i][c - 1 + j] = x; })); return rg; },
+          setNumberFormat() { return rg; }, setFontWeight() { return rg; }
+        };
+        return rg;
+      }
+    };
+    return S;
+  }
+  const sheets = {};
+  if (opts.rows) sheets[opts.tab || 'Responses'] = makeSheet(opts.rows, opts.maxCols || 68);
   const cache = {}, props = { ENTRY_PIN: opts.pin || '4321' };
   const ctx = {
     console, Math, JSON, String, Number, Array, Object, Date,
-    SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: n => n === 'Responses' ? S : null, insertSheet: () => S }) },
+    SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = makeSheet([], 26)) }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] }) },
     CacheService: { getScriptCache: () => ({ get: k => cache[k] || null, put: (k, v) => { cache[k] = v; } }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
@@ -38,7 +44,7 @@ function makeBackend(opts) {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'gas/survey.gs'), 'utf8'), ctx);
   return {
-    sheet, cache,
+    sheets, cache, tab: n => sheets[n],
     post: body => JSON.parse(ctx.doPost({ postData: { contents: typeof body === 'string' ? body : JSON.stringify(body) } }).s),
     get: () => JSON.parse(ctx.doGet().s)
   };

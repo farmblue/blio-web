@@ -3,16 +3,21 @@
  * Paste this into Extensions > Apps Script of the "Kolhapur Food Survey" Google Sheet,
  * set the Script property ENTRY_PIN, and deploy as a web app (Execute as: me, Who has access: Anyone).
  *
- * Two callers write to the same "Responses" tab:
- *  - blio.in/survey        the short public survey (action "submit", source "online")
- *  - blio.in/survey/entry  typing in the paper forms behind a PIN (actions "list", "save", "delete", source "offline")
+ * Two callers, two tabs in the same sheet:
+ *  - blio.in/survey        the short public survey (action "submit")              -> tab "Online"
+ *  - blio.in/survey/entry  typing in the paper forms behind a PIN ("list", "save", "delete") -> tab "Offline"
+ * Columns are matched by their header name, so they can be reordered in the sheet; missing ones are added at the end.
  */
-var TAB = 'Responses';
+var ONLINE_TAB = 'Online', OFFLINE_TAB = 'Offline', OLD_TAB = 'Responses';
 var QCOLS = ['q1', 'q2', 'q3', 'q4', 'q4_other', 'q5', 'q6', 'q6_other', 'q7', 'q7_other', 'q8', 'q9', 'q10', 'q11', 'q12', 'q12_other',
   'q13', 'q13_other', 'q14', 'q15', 'q16', 'q17', 'q18', 'q19', 'q19_other', 'q20', 'q20_other', 'q21', 'q22', 'q22_other', 'q23', 'q23_other',
   'q24', 'q25', 'q26', 'q27', 'q28', 'q29', 'q30', 'q31', 'q31_other', 'q32', 'q32_other', 'q33', 'q34', 'q35', 'q36', 'q37', 'q38', 'q39',
   'q40', 'q41', 'q41_other', 'q42', 'q43', 'q44', 'q45', 'q46', 'q46_other', 'q47', 'q47_other'];
-var COLS = ['form_no', 'date', 'team', 'surveyor'].concat(QCOLS, ['needs_check', 'notes', 'source', 'src', 'submitted_at', 'reward_code', 'consent', 'seconds', 'lang']);
+var OFFLINE_COLS = ['form_no', 'date', 'team', 'surveyor'].concat(QCOLS, ['needs_check', 'notes', 'submitted_at']);
+/* the questions the online survey asks, in the order it asks them */
+var ONLINE_Q = ['q1', 'q2', 'q42', 'q3', 'q4', 'q4_other', 'q5', 'q6', 'q6_other', 'q7', 'q7_other', 'q9', 'q11', 'q12', 'q12_other', 'q13', 'q13_other',
+  'q14', 'q15', 'q16', 'q17', 'q20', 'q20_other', 'q21', 'q23', 'q23_other', 'q27', 'q29', 'q32', 'q32_other', 'q33', 'q34', 'q37', 'q38', 'q45'];
+var ONLINE_COLS = ['submitted_at', 'src', 'lang', 'seconds', 'needs_check'].concat(ONLINE_Q, ['q44', 'consent', 'reward_code']);
 var CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 function json_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -51,9 +56,11 @@ function pin_(pin) {
   return null;
 }
 
-/** The Responses tab with every column in COLS present (missing ones are added at the end). */
-function sheet_() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(TAB) || ss.insertSheet(TAB);
+/** A tab with every column in cols present (missing ones are added at the end). Offline falls back to the old "Responses" tab. */
+function sheet_(name, cols) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name) || (name === OFFLINE_TAB && ss.getSheetByName(OLD_TAB)) || ss.insertSheet(name);
+  var COLS = cols;
   var lastCol = sh.getLastColumn(), head = lastCol ? sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : [];
   var missing = COLS.filter(function (c) { return head.indexOf(c) < 0; });
   if (missing.length) {
@@ -86,7 +93,9 @@ function write_(t, rowNo, vals) {
   rg.setValues([vals]);
 }
 function now_() { return Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm'); }
-function isOffline_(t, r) { var s = String(r[t.col.source] || ''); return s === '' || s === 'offline'; }
+function isOffline_(t, r) { var s = t.col.source === undefined ? '' : String(r[t.col.source] || ''); return s === '' || s === 'offline'; }
+function online_() { return sheet_(ONLINE_TAB, ONLINE_COLS); }
+function offline_() { return sheet_(OFFLINE_TAB, OFFLINE_COLS); }
 
 /* ---------- public online survey ---------- */
 function submit_(o) {
@@ -99,11 +108,11 @@ function submit_(o) {
   if (mobile && !/^[6-9]\d{9}$/.test(mobile)) return { ok: false, error: 'mobile' };
   if (mobile && !o.consent) return { ok: false, error: 'consent' };
 
-  var t = sheet_(), all = rows_(t), codes = {};
+  var t = online_(), all = rows_(t), codes = {};
   for (var i = 0; i < all.length; i++) {
     var r = all[i], code = String(r[t.col.reward_code] || '');
     if (code) codes[code] = 1;
-    if (mobile && String(r[t.col.source]) === 'online' && String(r[t.col.q44]) === mobile) return { ok: true, code: code, dup: true };
+    if (mobile && String(r[t.col.q44]) === mobile) return { ok: true, code: code, dup: true };
   }
   var newCode = '';
   if (mobile) {
@@ -111,10 +120,9 @@ function submit_(o) {
   }
   var secs = Math.max(0, Math.min(86400, Math.round(Number(o.seconds) || 0)));
   var row = blank_(t);
-  answers_(t, row, o.a);
-  put_(t, row, 'q43', '');                                   // the online survey does not ask for names
+  var a = o.a && typeof o.a === 'object' ? o.a : {};
+  ONLINE_Q.forEach(function (k) { if (a[k] != null && a[k] !== '') put_(t, row, k, cell_(a[k])); });
   put_(t, row, 'q44', mobile);
-  put_(t, row, 'source', 'online');
   put_(t, row, 'src', cap_(o.src || 'direct', 40).replace(/[^A-Za-z0-9_-]/g, ''));
   put_(t, row, 'submitted_at', now_());
   put_(t, row, 'reward_code', newCode);
@@ -128,7 +136,7 @@ function submit_(o) {
 
 /* ---------- paper-form entry ---------- */
 function list_() {
-  var t = sheet_(), out = [];
+  var t = offline_(), out = [];
   rows_(t).forEach(function (r) {
     if (!isOffline_(t, r)) return;
     var no = parseInt(r[t.col.form_no], 10);
@@ -147,7 +155,7 @@ function findForm_(t, all, no) {
 function save_(o) {
   var rec = o.rec || {}, no = parseInt(rec.no, 10), edit = parseInt(o.edit, 10) || 0;
   if (!no || no < 1 || no > 99999) return { ok: false, error: 'no' };
-  var t = sheet_(), all = rows_(t), at = findForm_(t, all, no);
+  var t = offline_(), all = rows_(t), at = findForm_(t, all, no);
   if (at && edit !== no) return { ok: false, error: 'exists' };
   var row = blank_(t);
   put_(t, row, 'form_no', String(no));
@@ -158,7 +166,6 @@ function save_(o) {
   if (rec.a && rec.a.q44) put_(t, row, 'q44', String(rec.a.q44).replace(/\D/g, '').slice(0, 12));
   put_(t, row, 'needs_check', rec.check ? 'yes' : '');
   put_(t, row, 'notes', cap_(rec.notes, 400));
-  put_(t, row, 'source', 'offline');
   put_(t, row, 'submitted_at', now_());
   write_(t, at || all.length + 2, row);
   if (edit && edit !== no) {                                 // the form number was changed: remove the old row
@@ -168,7 +175,7 @@ function save_(o) {
   return { ok: true };
 }
 function delete_(o) {
-  var no = parseInt(o.no, 10), t = sheet_(), at = no ? findForm_(t, rows_(t), no) : 0;
+  var no = parseInt(o.no, 10), t = offline_(), at = no ? findForm_(t, rows_(t), no) : 0;
   if (at) t.sh.deleteRow(at);
   return { ok: true, deleted: !!at };
 }
